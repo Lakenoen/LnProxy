@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ProxyLib\ProxyLib.csproj" />
+    <ProjectReference Include="..\ProxyModule\ProxyModule.csproj" />
   </ItemGroup>
 
 </Project>
