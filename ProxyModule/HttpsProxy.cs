@@ -44,8 +44,9 @@ public class HttpsProxy : IDisposable
         if (client.EndPoint == null)
             throw new ApplicationException("EndPoint is null");
 
-        IPEndPoint remoteEndPoint = server.Clients[client];
+        IPEndPoint remoteEndPoint = client.EndPoint;
         string strReaded = Encoding.UTF8.GetString(data);
+
         if (strReaded.StartsWith("CONNECT"))
         {
             string targetAddr = strReaded.Split(' ')[1];
@@ -72,7 +73,6 @@ public class HttpsProxy : IDisposable
 
     private void Server_OnConnected(TcpClientWrapper client)
     {
-        IPEndPoint remoteEndPoint = server.Clients[client];
         
     }
     public void Dispose()
