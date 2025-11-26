@@ -5,11 +5,9 @@ using System.Threading;
 
 namespace TcpModule;
 
-public class TcpServer : IDisposable
+public class TcpServer : AStartableAsync, IDisposable
 {
     private TcpListener _listener;
-    private (bool item, object locker) _started = new(false, new());
-    private CancellationTokenSource? _cancel;
     private Dictionary<TcpClientWrapper, IPEndPoint> _clients = new Dictionary<TcpClientWrapper, IPEndPoint>();
     private object _clientsLocker = new object();
     public IPEndPoint EndPoint { get; init; }
@@ -18,56 +16,11 @@ public class TcpServer : IDisposable
         get => _clients.ToFrozenDictionary();
         private set => _clients = value.ToDictionary();
     }
-    public TcpServer(IPEndPoint endPoint)
+    public TcpServer(IPEndPoint endPoint) : base()
     {
         this.EndPoint = endPoint;
-        _listener = new TcpListener(endPoint);
-        _cancel = new CancellationTokenSource();
+        _listener = new TcpListener(this.EndPoint);
     }
-    public async Task StartAsync()
-    {
-        lock (_started.locker)
-        {
-            if (_started.item == true) return;
-            _started.item = true;
-        }
-        try
-        {
-            _listener.Start();
-            while (!_cancel!.Token.IsCancellationRequested)
-            {
-                TcpClient client = await _listener.AcceptTcpClientAsync(_cancel.Token);
-                var wrapper = new TcpClientWrapper(client);
-
-                lock (_clientsLocker)
-                {
-                    _clients.Add(wrapper, client.Client.RemoteEndPoint as IPEndPoint);
-                }
-
-                wrapper.OnDisconnect += Wrapper_OnDisconnect;
-                var readTask = Read(wrapper); 
-                OnConnected?.Invoke(wrapper);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-
-        }
-        catch (Exception ex)
-        {
-            OnError?.Invoke(ex);
-        }
-        finally
-        {
-            ResetCancel();
-            lock (_started.locker)
-            {
-                _started.item = false;
-            }
-            _listener.Stop();
-        }
-    }
-
     private void Wrapper_OnDisconnect(TcpClientWrapper tcpClientWrapper)
     {
         OnClientDisconnect?.Invoke(tcpClientWrapper);
@@ -77,38 +30,6 @@ public class TcpServer : IDisposable
         }
         tcpClientWrapper.Dispose();
     }
-
-    public void Stop()
-    {
-        if (_cancel != null && _cancel?.Token.IsCancellationRequested == false)
-            _cancel?.Cancel();
-    }
-    public async Task StopAsync()
-    {
-        Stop();
-        await Task.Run(() =>
-        {
-            while (true) {
-                lock (_started.locker)
-                {
-                    if (!_started.item)
-                        break;
-                }
-                Task.Delay(5);
-            }
-        });
-    }
-
-    private void ResetCancel()
-    {
-        if (_cancel != null)
-        {
-            _cancel?.Cancel();
-            _cancel?.Dispose();
-        }
-        _cancel = new CancellationTokenSource();
-    }
-
     private async Task Read(TcpClientWrapper client)
     {
         await Task.Run(() =>
@@ -138,13 +59,49 @@ public class TcpServer : IDisposable
             }
         });
     }
-
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(_listener.GetHashCode(), this.EndPoint.GetHashCode());
+    }
     public void Dispose()
     {
-        _cancel?.Cancel();
+        StopAsync().Wait();
         _cancel?.Dispose();
         _listener.Stop();
         _listener.Dispose();
+        foreach (var item in _clients)
+        {
+            item.Key.Dispose();
+        }
+    }
+
+    protected override void Start()
+    {
+        _listener.Start();
+        while (!_cancel!.Token.IsCancellationRequested)
+        {
+            TcpClient client = _listener.AcceptTcpClientAsync(_cancel.Token).Result;
+            var wrapper = new TcpClientWrapper(client);
+
+            lock (_clientsLocker)
+            {
+                _clients.Add(wrapper, client.Client.RemoteEndPoint as IPEndPoint);
+            }
+
+            wrapper.OnDisconnect += Wrapper_OnDisconnect;
+            var readTask = Read(wrapper);
+            OnConnected?.Invoke(wrapper);
+        }
+    }
+
+    protected override void End()
+    {
+        _listener.Stop();
+    }
+
+    protected override void Error(Exception ex)
+    {
+        OnError?.Invoke(ex);
     }
 
     public delegate void Connected(TcpClientWrapper client);
@@ -155,6 +112,5 @@ public class TcpServer : IDisposable
 
     public event TcpClientWrapper.Disconnect? OnClientDisconnect;
 
-    public delegate void Error(Exception ex);
-    public event Error? OnError;
+    public event Action<Exception>? OnError;
 }

@@ -8,3 +8,4 @@ using TcpModule;
 HttpsProxy server = new HttpsProxy();
 var task = server.StartAsync();
 task.Wait();
+server.Dispose();

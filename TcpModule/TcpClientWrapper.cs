@@ -12,7 +12,12 @@ public class TcpClientWrapper : IDisposable
 {
     public byte[] Buffer { get; } = new byte[0xffff];
     private readonly TcpClient _client;
-    private readonly NetworkStream _stream;
+    private NetworkStream _stream;
+
+    public IPEndPoint? EndPoint
+    {
+        get => _client.Client.RemoteEndPoint as IPEndPoint;
+    }
     public TcpClientWrapper(TcpClient client)
     {
         _client = client;
@@ -26,6 +31,27 @@ public class TcpClientWrapper : IDisposable
         _stream = _client.GetStream();
     }
 
+    public bool Reconnect()
+    {
+        try
+        {
+            if (this.CheckConnection())
+                return false;
+            if (this.EndPoint == null)
+                return false;
+            _client.Connect(this.EndPoint);
+            _stream = _client.GetStream();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
     public byte[] ReadAvailable()
     {
         var result = new Span<byte>(Buffer);
@@ -89,10 +115,7 @@ public class TcpClientWrapper : IDisposable
     {
         try
         {
-            if (_client.Client == null)
-                return false;
-
-            if (_client.Client.Poll(1000, SelectMode.SelectRead) && _client.Client.Available == 0)
+            if (_client.Client == null || _client.Client.Poll(1000, SelectMode.SelectRead) && _client.Client.Available == 0)
                 return false;
         }
         catch (ObjectDisposedException)

@@ -1,13 +1,14 @@
-﻿using System.Collections.Frozen;
+﻿using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Net;
 using System.Text;
 using TcpModule;
 
 namespace ProxyModule;
-public class HttpsProxy
+public class HttpsProxy : IDisposable
 {
+    private ConcurrentDictionary<IPEndPoint, TcpTunel> _tunnels = new ConcurrentDictionary<IPEndPoint, TcpTunel>();
     private readonly TcpServer server;
-    private Dictionary<IPEndPoint, TcpClientWrapper> clients = new Dictionary<IPEndPoint, TcpClientWrapper>();
     public HttpsProxy()
     {
         server = new TcpServer(IPEndPoint.Parse("0.0.0.0:8888"));
@@ -38,21 +39,48 @@ public class HttpsProxy
 
     private void Server_OnReaded(TcpClientWrapper client, byte[] data)
     {
+        if (client.EndPoint == null)
+            throw new ApplicationException("EndPoint is null");
+
         IPEndPoint remoteEndPoint = server.Clients[client];
-        FrozenDictionary<TcpClientWrapper, IPEndPoint> d = server.Clients;
-        var enums = d.Where((KeyValuePair<TcpClientWrapper, IPEndPoint> el) =>
+        string strReaded = Encoding.UTF8.GetString(data);
+        if (strReaded.StartsWith("CONNECT"))
         {
-            if (el.Value.Equals(remoteEndPoint))
-                return true;
-            else
-                return false;
-        });
-        string strData = Encoding.UTF8.GetString(data);
+            string targetAddr = strReaded.Split(' ')[1];
+            var host = targetAddr.Split(':')[0];
+            var port = int.Parse(targetAddr.Split(':')[1]);
+
+            client.Write(Encoding.UTF8.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n"));
+
+            var target = CreateTargetConnection(Dns.GetHostEntry(host), port);
+            TcpTunel newTunel = new TcpTunel(client, target);
+            _tunnels.TryAdd(client.EndPoint, newTunel);
+            var tast = newTunel.StartAsync();
+        }
+        else if(strReaded.Contains("HTTP/"))
+        {
+             
+        }
+        else
+        {
+            TcpClientWrapper targetClient = _tunnels[client.EndPoint].Target;
+            targetClient?.Write(data);
+        }
     }
 
     private void Server_OnConnected(TcpClientWrapper client)
     {
         IPEndPoint remoteEndPoint = server.Clients[client];
-        clients.Add(remoteEndPoint, client);
+        
     }
+    public void Dispose()
+    {
+        server.Dispose();
+    }
+    private TcpClientWrapper CreateTargetConnection(IPHostEntry Entry, int port)
+    {
+        IPEndPoint enpoint = new IPEndPoint(Entry.AddressList.Last(), port);
+        return new TcpClientWrapper(enpoint);
+    }
+
 }
