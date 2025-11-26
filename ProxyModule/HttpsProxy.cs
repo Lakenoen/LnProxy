@@ -34,7 +34,9 @@ public class HttpsProxy : IDisposable
 
     private void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
     {
-        int i = 0;
+        if (tcpClientWrapper.EndPoint == null)
+            return;
+        _tunnels.Remove(tcpClientWrapper.EndPoint, out _);
     }
 
     private void Server_OnReaded(TcpClientWrapper client, byte[] data)

@@ -8,10 +8,10 @@ namespace TcpModule;
 public class TcpServer : AStartableAsync, IDisposable
 {
     private TcpListener _listener;
-    private Dictionary<TcpClientWrapper, IPEndPoint> _clients = new Dictionary<TcpClientWrapper, IPEndPoint>();
+    private Dictionary<TcpClientWrapper, ClientInfo> _clients = new Dictionary<TcpClientWrapper, ClientInfo>();
     private object _clientsLocker = new object();
     public IPEndPoint EndPoint { get; init; }
-    public FrozenDictionary<TcpClientWrapper, IPEndPoint> Clients
+    public FrozenDictionary<TcpClientWrapper, ClientInfo> Clients
     {
         get => _clients.ToFrozenDictionary();
         private set => _clients = value.ToDictionary();
@@ -85,7 +85,7 @@ public class TcpServer : AStartableAsync, IDisposable
 
             lock (_clientsLocker)
             {
-                _clients.Add(wrapper, client.Client.RemoteEndPoint as IPEndPoint);
+                _clients.Add(wrapper, new ClientInfo(wrapper, DateTime.Now));
             }
 
             wrapper.OnDisconnect += Wrapper_OnDisconnect;
@@ -102,6 +102,16 @@ public class TcpServer : AStartableAsync, IDisposable
     protected override void Error(Exception ex)
     {
         OnError?.Invoke(ex);
+    }
+
+    public class ClientInfo(TcpClientWrapper client)
+    {
+        public TcpClientWrapper Client { get; private set; } = client;
+        public DateTime connectionTime { get; set; }
+        public ClientInfo(TcpClientWrapper client, DateTime connectionTime) : this(client)
+        {
+            this.connectionTime = connectionTime;
+        }
     }
 
     public delegate void Connected(TcpClientWrapper client);
