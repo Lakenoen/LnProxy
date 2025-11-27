@@ -1,4 +1,5 @@
-﻿using System.Collections.Frozen;
+﻿using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -8,13 +9,11 @@ namespace TcpModule;
 public class TcpServer : AStartableAsync, IDisposable
 {
     private TcpListener _listener;
-    private Dictionary<TcpClientWrapper, ClientInfo> _clients = new Dictionary<TcpClientWrapper, ClientInfo>();
-    private object _clientsLocker = new object();
+    private ConcurrentDictionary<TcpClientWrapper, ClientInfo> _clients = new ConcurrentDictionary<TcpClientWrapper, ClientInfo>();
     public IPEndPoint EndPoint { get; init; }
     public FrozenDictionary<TcpClientWrapper, ClientInfo> Clients
     {
         get => _clients.ToFrozenDictionary();
-        private set => _clients = value.ToDictionary();
     }
     public TcpServer(IPEndPoint endPoint) : base()
     {
@@ -24,10 +23,7 @@ public class TcpServer : AStartableAsync, IDisposable
     private void Wrapper_OnDisconnect(TcpClientWrapper tcpClientWrapper)
     {
         OnClientDisconnect?.Invoke(tcpClientWrapper);
-        lock (_clientsLocker)
-        {
-            _clients.Remove(tcpClientWrapper);
-        }
+        _clients.TryRemove(tcpClientWrapper, out _);
         tcpClientWrapper.Dispose();
     }
     private async Task Read(TcpClientWrapper client)
@@ -40,18 +36,23 @@ public class TcpServer : AStartableAsync, IDisposable
                 {
                     if (!client.CheckConnection())
                         return;
-                    var data = client.ReadAvailable();
 
+                    byte[] data = client.ReadAvailableAsync(_cancel.Token).Result;
                     if (data.Length != 0)
                         OnReaded?.Invoke(client, data);
                 }
             }
-            catch (ObjectDisposedException ex)
+            catch (OperationCanceledException)
             {
-
+                return;
             }
-            catch (IOException ex) {
-                
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            catch (IOException)
+            {
+                return;
             }
             catch (Exception ex)
             {
@@ -83,14 +84,11 @@ public class TcpServer : AStartableAsync, IDisposable
             TcpClient client = _listener.AcceptTcpClientAsync(_cancel.Token).Result;
             var wrapper = new TcpClientWrapper(client);
 
-            lock (_clientsLocker)
-            {
-                _clients.Add(wrapper, new ClientInfo(wrapper, DateTime.Now));
-            }
+            _clients.TryAdd(wrapper, new ClientInfo(wrapper, DateTime.Now));
 
             wrapper.OnDisconnect += Wrapper_OnDisconnect;
-            var readTask = Read(wrapper);
             OnConnected?.Invoke(wrapper);
+            var readTask = Read(wrapper);
         }
     }
 
@@ -120,7 +118,7 @@ public class TcpServer : AStartableAsync, IDisposable
     public delegate void Readed(TcpClientWrapper client, byte[] data);
     public event Readed? OnReaded;
 
-    public event TcpClientWrapper.Disconnect? OnClientDisconnect;
+    public event Action<TcpClientWrapper>? OnClientDisconnect;
 
     public event Action<Exception>? OnError;
 }

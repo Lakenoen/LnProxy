@@ -7,7 +7,7 @@ using TcpModule;
 namespace ProxyModule;
 public class HttpsProxy : IDisposable
 {
-    private ConcurrentDictionary<IPEndPoint, TcpTunel> _tunnels = new ConcurrentDictionary<IPEndPoint, TcpTunel>();
+    private ConcurrentDictionary<IPEndPoint, (TcpTunnel tunnel, Task task)> _tunnels = new ConcurrentDictionary<IPEndPoint, (TcpTunnel tunnel, Task task)>();
     private readonly TcpServer server;
     public HttpsProxy()
     {
@@ -36,6 +36,12 @@ public class HttpsProxy : IDisposable
     {
         if (tcpClientWrapper.EndPoint == null)
             return;
+        if (_tunnels.TryGetValue(tcpClientWrapper.EndPoint, out var info))
+        {
+            info.tunnel.StopAsync().Wait();
+            info.task.Wait();
+            info.tunnel.Dispose();
+        }
         _tunnels.Remove(tcpClientWrapper.EndPoint, out _);
     }
 
@@ -44,7 +50,6 @@ public class HttpsProxy : IDisposable
         if (client.EndPoint == null)
             throw new ApplicationException("EndPoint is null");
 
-        IPEndPoint remoteEndPoint = client.EndPoint;
         string strReaded = Encoding.UTF8.GetString(data);
 
         if (strReaded.StartsWith("CONNECT"))
@@ -53,21 +58,22 @@ public class HttpsProxy : IDisposable
             var host = targetAddr.Split(':')[0];
             var port = int.Parse(targetAddr.Split(':')[1]);
 
-            client.Write(Encoding.UTF8.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n"));
-
             var target = CreateTargetConnection(Dns.GetHostEntry(host), port);
-            TcpTunel newTunel = new TcpTunel(client, target);
-            _tunnels.TryAdd(client.EndPoint, newTunel);
-            var tast = newTunel.StartAsync();
+            if (!client.CheckConnection())
+                return;
+
+            TcpTunnel newTunel = new TcpTunnel(client, target);
+            _tunnels.TryAdd( client.EndPoint, (newTunel, newTunel.StartAsync()) );
+
+            client.WriteAsync(Encoding.UTF8.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n")).Wait();
         }
         else if(strReaded.Contains("HTTP/"))
         {
-             
+            
         }
         else
         {
-            TcpClientWrapper targetClient = _tunnels[client.EndPoint].Target;
-            targetClient?.Write(data);
+            
         }
     }
 
