@@ -7,7 +7,7 @@ using TcpModule;
 namespace ProxyModule;
 public class HttpsProxy : IDisposable
 {
-    private ConcurrentDictionary<IPEndPoint, (TcpTunnel tunnel, Task task)> _tunnels = new ConcurrentDictionary<IPEndPoint, (TcpTunnel tunnel, Task task)>();
+    private ConcurrentDictionary<IPEndPoint, TcpTunnel> _tunnels = new ConcurrentDictionary<IPEndPoint, TcpTunnel>();
     private readonly TcpServer server;
     public HttpsProxy()
     {
@@ -29,23 +29,18 @@ public class HttpsProxy : IDisposable
     }
     private void Server_OnError(Exception ex)
     {
-        throw new NotImplementedException();
+        Console.WriteLine(ex.Message);
     }
 
     private void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
     {
         if (tcpClientWrapper.EndPoint == null)
             return;
-        if (_tunnels.TryGetValue(tcpClientWrapper.EndPoint, out var info))
-        {
-            info.tunnel.StopAsync().Wait();
-            info.task.Wait();
-            info.tunnel.Dispose();
-        }
-        _tunnels.Remove(tcpClientWrapper.EndPoint, out _);
+        if (_tunnels.Remove(tcpClientWrapper.EndPoint, out var tunnel))
+            tunnel.Dispose();
     }
 
-    private void Server_OnReaded(TcpClientWrapper client, byte[] data)
+    private async void Server_OnReaded(TcpClientWrapper client, byte[] data)
     {
         if (client.EndPoint == null)
             throw new ApplicationException("EndPoint is null");
@@ -58,22 +53,32 @@ public class HttpsProxy : IDisposable
             var host = targetAddr.Split(':')[0];
             var port = int.Parse(targetAddr.Split(':')[1]);
 
-            var target = CreateTargetConnection(Dns.GetHostEntry(host), port);
+            var entry = await Dns.GetHostEntryAsync(host);
+            var target = CreateTargetConnection(entry, port);
+
             if (!client.CheckConnection())
                 return;
 
             TcpTunnel newTunel = new TcpTunnel(client, target);
-            _tunnels.TryAdd( client.EndPoint, (newTunel, newTunel.StartAsync()) );
+            newTunel.OnError += Server_OnError;
+            newTunel.StartAsync();
+            _tunnels.TryAdd(client.EndPoint, newTunel);
 
-            client.WriteAsync(Encoding.UTF8.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n")).Wait();
+            var response = "HTTP/1.1 200 OK\r\n" +
+                      "Connection: close\r\n" +
+                      "Cache-Control: no-cache, no-store, must-revalidate\r\n" +
+                      "Pragma: no-cache\r\n" +
+                      "Expires: 0\r\n" +
+                      "\r\n";
+            client.WriteAsync(Encoding.UTF8.GetBytes(response)).Wait();
         }
-        else if(strReaded.Contains("HTTP/"))
+        else if (strReaded.Contains("HTTP/"))
         {
-            
+
         }
         else
         {
-            
+
         }
     }
 
@@ -85,10 +90,17 @@ public class HttpsProxy : IDisposable
     {
         server.Dispose();
     }
-    private TcpClientWrapper CreateTargetConnection(IPHostEntry Entry, int port)
+    private TcpClientWrapper? CreateTargetConnection(IPHostEntry entry, int port)
     {
-        IPEndPoint enpoint = new IPEndPoint(Entry.AddressList.Last(), port);
-        return new TcpClientWrapper(enpoint);
+        foreach (var address in entry.AddressList)
+        {
+            IPEndPoint enpoint = new IPEndPoint(address, port);
+            var res = new TcpClientWrapper(enpoint);
+            if(res.CheckConnection()) return res;
+        }
+
+        Task.Delay(1).Wait();
+        return null;
     }
 
 }

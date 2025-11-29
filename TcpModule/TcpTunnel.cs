@@ -14,13 +14,23 @@ public class TcpTunnel : AStartableAsync, IDisposable
 {
     public TcpClientWrapper Source { get; private set; }
     public TcpClientWrapper Target { get; private set; }
-
     public TcpTunnel(TcpClientWrapper source, TcpClientWrapper target) : base()
     {
         this.Source = source;
         this.Target = target;
+        Source.OnDisconnect += Source_OnDisconnect;
         Source.OnReaded += SourceReaded;
         Target.OnReaded += TargetReaded;
+    }
+
+    private void Source_OnDisconnect(TcpClientWrapper obj)
+    {
+        this.Dispose();
+    }
+
+    protected override void Init()
+    {
+
     }
     protected override void End()
     {
@@ -38,10 +48,9 @@ public class TcpTunnel : AStartableAsync, IDisposable
             if (!Source.CheckConnection() || !Target.CheckConnection())
                 return;
 
-            Target.ReadAvailableAsync(_cancel.Token).Wait();
+            Target.ReadAvailableAsync(_cancel!.Token).Wait();
         }
     }
-
     private async void TargetReaded(byte[] data)
     {
         await Source.WriteAsync(data);
@@ -52,8 +61,6 @@ public class TcpTunnel : AStartableAsync, IDisposable
     }
     public void Dispose()
     {
-        StopAsync().Wait();
-        End();
         Target?.Dispose();
     }
 

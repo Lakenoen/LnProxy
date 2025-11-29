@@ -23,21 +23,27 @@ public class TcpServer : AStartableAsync, IDisposable
     private void Wrapper_OnDisconnect(TcpClientWrapper tcpClientWrapper)
     {
         OnClientDisconnect?.Invoke(tcpClientWrapper);
+        if (_clients.TryGetValue(tcpClientWrapper, out ClientInfo? clientInfo))
+        {
+            clientInfo._clientCancel.Cancel();
+            clientInfo.clientTask.Wait();
+        }
         _clients.TryRemove(tcpClientWrapper, out _);
         tcpClientWrapper.Dispose();
     }
-    private async Task Read(TcpClientWrapper client)
+    private async Task Read(TcpClientWrapper client, CancellationToken clientCancel)
     {
-        await Task.Run(() =>
+        if(_cancel == null)
+            throw new ArgumentNullException(nameof(clientCancel));
+
+        CancellationTokenSource source = CancellationTokenSource.CreateLinkedTokenSource(clientCancel, _cancel.Token);
+        await Task.Run(async () =>
         {
             try
             {
-                while (!_cancel!.Token.IsCancellationRequested)
+                while (!source.Token.IsCancellationRequested)
                 {
-                    if (!client.CheckConnection())
-                        return;
-
-                    byte[] data = client.ReadAvailableAsync(_cancel.Token).Result;
+                    byte[] data = await client.ReadAvailableAsync(source.Token);
                     if (data.Length != 0)
                         OnReaded?.Invoke(client, data);
                 }
@@ -78,17 +84,17 @@ public class TcpServer : AStartableAsync, IDisposable
 
     protected override void Start()
     {
-        _listener.Start();
         while (!_cancel!.Token.IsCancellationRequested)
         {
-            TcpClient client = _listener.AcceptTcpClientAsync(_cancel.Token).Result;
+            TcpClient client = _listener.AcceptTcpClientAsync(_cancel!.Token).Result;
             var wrapper = new TcpClientWrapper(client);
-
-            _clients.TryAdd(wrapper, new ClientInfo(wrapper, DateTime.Now));
-
             wrapper.OnDisconnect += Wrapper_OnDisconnect;
+
+            CancellationTokenSource clientCancel = new CancellationTokenSource();
+            var readTask = Read(wrapper, clientCancel.Token);
+            _clients.TryAdd(wrapper, new ClientInfo(wrapper, DateTime.Now, clientCancel, readTask));
+
             OnConnected?.Invoke(wrapper);
-            var readTask = Read(wrapper);
         }
     }
 
@@ -102,13 +108,23 @@ public class TcpServer : AStartableAsync, IDisposable
         OnError?.Invoke(ex);
     }
 
-    public class ClientInfo(TcpClientWrapper client)
+    protected override void Init()
     {
-        public TcpClientWrapper Client { get; private set; } = client;
-        public DateTime connectionTime { get; set; }
-        public ClientInfo(TcpClientWrapper client, DateTime connectionTime) : this(client)
+        _listener.Start();
+    }
+
+    public class ClientInfo
+    {
+        public TcpClientWrapper Client { get; init; }
+        public DateTime connectionTime { get; init; }
+        public CancellationTokenSource _clientCancel { get; init; }
+        public Task clientTask { get; init; }
+        public ClientInfo(TcpClientWrapper client, DateTime connectionTime, CancellationTokenSource _clientCancel, Task clientTask)
         {
+            this._clientCancel = _clientCancel;
             this.connectionTime = connectionTime;
+            this.Client = client;
+            this.clientTask = clientTask;
         }
     }
 

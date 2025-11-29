@@ -56,24 +56,35 @@ public class TcpClientWrapper : IDisposable
         int readed = 0;
         try
         {
-           readed = (cancel == null) ? await _stream.ReadAsync(Buffer) : await _stream.ReadAsync(Buffer, (CancellationToken)cancel);
-           if (!CheckConnection() || readed == 0)
-           {
+            if (!CheckConnection())
+            {
                 OnDisconnect?.Invoke(this);
-                return new byte[0];
-           }
+                return Array.Empty<byte>();
+            }
+
+            readed = (cancel == null) ? await _stream.ReadAsync(Buffer)
+                : await _stream.ReadAsync(Buffer, (CancellationToken)cancel);
+            if (readed == 0)
+            {
+                OnDisconnect?.Invoke(this);
+                return Array.Empty<byte>();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            
         }
         catch (ObjectDisposedException)
         {
             OnDisconnect?.Invoke(this);
-            return new byte[0];
+            return Array.Empty<byte>();
         }
         catch (IOException)
         {
             OnDisconnect?.Invoke(this);
-            return new byte[0];
+            return Array.Empty<byte>();
         }
-        var data = Buffer.AsSpan().Slice(0, readed).ToArray();
+        var data = Buffer.AsMemory(0, readed).ToArray();
         OnReaded?.Invoke(data);
         return data;
     }
@@ -92,6 +103,10 @@ public class TcpClientWrapper : IDisposable
             else
                 await _stream.WriteAsync(data, 0, data.Length, (CancellationToken)cancel);
             _stream.Flush();
+        }
+        catch (OperationCanceledException)
+        {
+
         }
         catch (ObjectDisposedException)
         {

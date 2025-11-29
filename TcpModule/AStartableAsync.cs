@@ -11,13 +11,13 @@ namespace TcpModule;
 public abstract class AStartableAsync
 {
     protected CancellationTokenSource? _cancel;
-    private (bool item, object locker) _started = new(false, new());
+    protected (bool item, object locker) _started = new(false, new());
 
     public AStartableAsync()
     {
         _cancel = new CancellationTokenSource();
     }
-    public async Task StartAsync()
+    public virtual async Task StartAsync()
     {
         await Task.Run(() =>
         {
@@ -28,6 +28,7 @@ public abstract class AStartableAsync
             }
             try
             {
+                Init();
                 Start();
             }
             catch (OperationCanceledException)
@@ -50,6 +51,7 @@ public abstract class AStartableAsync
         });
     }
 
+    protected abstract void Init();
     protected abstract void Start();
     protected abstract void End();
     protected abstract void Error(Exception ex);
@@ -65,7 +67,7 @@ public abstract class AStartableAsync
                     if (!_started.item)
                         break;
                 }
-                Task.Delay(5);
+                Task.Delay(1);
             }
         });
     }
