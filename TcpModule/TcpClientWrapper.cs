@@ -42,6 +42,10 @@ public class TcpClientWrapper : IDisposable
             _stream = _client.GetStream();
             return true;
         }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
         catch (SocketException)
         {
             return false;
@@ -63,7 +67,7 @@ public class TcpClientWrapper : IDisposable
             }
 
             readed = (cancel == null) ? await _stream.ReadAsync(Buffer)
-                : await _stream.ReadAsync(Buffer, (CancellationToken)cancel);
+                : await _stream.ReadAsync(Buffer, cancel.Value);
             if (readed == 0)
             {
                 OnDisconnect?.Invoke(this);
@@ -128,7 +132,7 @@ public class TcpClientWrapper : IDisposable
         {
             OnDisconnect?.Invoke(this);
         }
-        catch (IOException)
+        catch (SocketException)
         {
             OnDisconnect?.Invoke(this);
         }
@@ -138,7 +142,7 @@ public class TcpClientWrapper : IDisposable
     {
         try
         {
-            if (_client.Client == null || _client.Client.Poll(0, SelectMode.SelectRead) && _client.Client.Available == 0)
+            if (_client.Client.Poll(0, SelectMode.SelectRead) && _client.Client.Available == 0)
                 return false;
         }
         catch (NullReferenceException)

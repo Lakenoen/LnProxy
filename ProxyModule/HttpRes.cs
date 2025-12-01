@@ -5,8 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace ProxyModule;
-internal class HttpContent
+public class HttpRes()
 {
-    public Dictionary<string, string> Header { get; set; } = new();
-    public List<byte> Data { get; set; } = new();
+
 }

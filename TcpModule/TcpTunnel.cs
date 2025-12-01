@@ -18,16 +18,9 @@ public class TcpTunnel : AStartableAsync, IDisposable
     {
         this.Source = source;
         this.Target = target;
-        Source.OnDisconnect += Source_OnDisconnect;
         Source.OnReaded += SourceReaded;
         Target.OnReaded += TargetReaded;
     }
-
-    private void Source_OnDisconnect(TcpClientWrapper obj)
-    {
-        this.Dispose();
-    }
-
     protected override void Init()
     {
 
@@ -39,7 +32,7 @@ public class TcpTunnel : AStartableAsync, IDisposable
 
     protected override void Error(Exception ex)
     {
-        OnError?.Invoke(ex);
+        OnError?.Invoke(this, ex);
     }
     protected override void Start()
     {
@@ -64,5 +57,5 @@ public class TcpTunnel : AStartableAsync, IDisposable
         Target?.Dispose();
     }
 
-    public event Action<Exception>? OnError;
+    public event Action<TcpTunnel, Exception>? OnError;
 }

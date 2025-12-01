@@ -1,7 +1,9 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Frozen;
+using System.Data.SqlTypes;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace TcpModule;
@@ -20,16 +22,20 @@ public class TcpServer : AStartableAsync, IDisposable
         this.EndPoint = endPoint;
         _listener = new TcpListener(this.EndPoint);
     }
-    private void Wrapper_OnDisconnect(TcpClientWrapper tcpClientWrapper)
+    private async void Wrapper_OnDisconnect(TcpClientWrapper tcpClientWrapper)
     {
         OnClientDisconnect?.Invoke(tcpClientWrapper);
-        if (_clients.TryGetValue(tcpClientWrapper, out ClientInfo? clientInfo))
+        await DropClient(tcpClientWrapper);
+    }
+
+    public async Task DropClient(TcpClientWrapper tcpClientWrapper)
+    {
+        if (_clients.TryRemove(tcpClientWrapper, out ClientInfo? clientInfo))
         {
             clientInfo._clientCancel.Cancel();
-            clientInfo.clientTask.Wait();
+            await clientInfo.clientTask;
+            clientInfo.Dispose();
         }
-        _clients.TryRemove(tcpClientWrapper, out _);
-        tcpClientWrapper.Dispose();
     }
     private async Task Read(TcpClientWrapper client, CancellationToken clientCancel)
     {
@@ -62,7 +68,8 @@ public class TcpServer : AStartableAsync, IDisposable
             }
             catch (Exception ex)
             {
-                OnError?.Invoke(ex);
+                OnError?.Invoke(ex, client);
+                await DropClient(client);
             }
         });
     }
@@ -105,7 +112,7 @@ public class TcpServer : AStartableAsync, IDisposable
 
     protected override void Error(Exception ex)
     {
-        OnError?.Invoke(ex);
+        OnError?.Invoke(ex, null);
     }
 
     protected override void Init()
@@ -113,7 +120,7 @@ public class TcpServer : AStartableAsync, IDisposable
         _listener.Start();
     }
 
-    public class ClientInfo
+    public class ClientInfo : IDisposable
     {
         public TcpClientWrapper Client { get; init; }
         public DateTime connectionTime { get; init; }
@@ -126,15 +133,18 @@ public class TcpServer : AStartableAsync, IDisposable
             this.Client = client;
             this.clientTask = clientTask;
         }
+
+        public void Dispose()
+        {
+            _clientCancel?.Dispose();
+            Client.Dispose();
+        }
     }
 
-    public delegate void Connected(TcpClientWrapper client);
-    public event Connected? OnConnected;
-
     public delegate void Readed(TcpClientWrapper client, byte[] data);
+
     public event Readed? OnReaded;
-
+    public event Action<TcpClientWrapper>? OnConnected;
     public event Action<TcpClientWrapper>? OnClientDisconnect;
-
-    public event Action<Exception>? OnError;
+    public event Action<Exception, TcpClientWrapper?>? OnError;
 }

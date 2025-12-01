@@ -27,17 +27,36 @@ public class HttpsProxy : IDisposable
     {
         await server.StopAsync();
     }
-    private void Server_OnError(Exception ex)
+
+    private async void Server_OnError(Exception ex, TcpClientWrapper? client)
     {
-        Console.WriteLine(ex.Message);
+        if (client == null)
+            return;
+
+        if (_tunnels!.Remove(client.EndPoint, out var tunnel))
+        {
+            await tunnel.StopAsync();
+            tunnel.Dispose();
+        }
+    }
+    private async void Tunnel_OnError(TcpTunnel tunnel, Exception ex)
+    {
+        if (tunnel.Source.EndPoint is not null)
+            _tunnels.Remove(tunnel.Source.EndPoint, out _);
+
+        await tunnel.StopAsync();
+        tunnel.Dispose();
     }
 
-    private void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
+    private async void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
     {
         if (tcpClientWrapper.EndPoint == null)
             return;
         if (_tunnels.Remove(tcpClientWrapper.EndPoint, out var tunnel))
+        {
+            await tunnel.StopAsync();
             tunnel.Dispose();
+        }
     }
 
     private async void Server_OnReaded(TcpClientWrapper client, byte[] data)
@@ -59,8 +78,8 @@ public class HttpsProxy : IDisposable
             if (!client.CheckConnection())
                 return;
 
-            TcpTunnel newTunel = new TcpTunnel(client, target);
-            newTunel.OnError += Server_OnError;
+            TcpTunnel newTunel = new TcpTunnel(client, target!);
+            newTunel.OnError += Tunnel_OnError;
             newTunel.StartAsync();
             _tunnels.TryAdd(client.EndPoint, newTunel);
 
@@ -74,7 +93,8 @@ public class HttpsProxy : IDisposable
         }
         else if (strReaded.Contains("HTTP/"))
         {
-
+            //var cont = HttpContent.Parse(new HttpContent.DataUnion(data).ToString());
+            //cont.ToString();
         }
         else
         {
