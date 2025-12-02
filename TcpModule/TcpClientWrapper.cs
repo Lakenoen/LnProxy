@@ -142,6 +142,9 @@ public class TcpClientWrapper : IDisposable
     {
         try
         {
+            if (_client.Client == null)
+                return false;
+
             if (_client.Client.Poll(0, SelectMode.SelectRead) && _client.Client.Available == 0)
                 return false;
         }

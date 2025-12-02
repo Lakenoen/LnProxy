@@ -52,6 +52,7 @@ public class HttpsProxy : IDisposable
     {
         if (tcpClientWrapper.EndPoint == null)
             return;
+
         if (_tunnels.Remove(tcpClientWrapper.EndPoint, out var tunnel))
         {
             await tunnel.StopAsync();
@@ -64,44 +65,55 @@ public class HttpsProxy : IDisposable
         if (client.EndPoint == null)
             throw new ApplicationException("EndPoint is null");
 
-        string strReaded = Encoding.UTF8.GetString(data);
+        using MemoryStream stream = new MemoryStream(data);
+        using StreamReader reader = new StreamReader(stream);
 
-        if (strReaded.StartsWith("CONNECT"))
+        string? firstLine = reader.ReadLine();
+
+        if (firstLine == null)
+            return;
+
+        if (firstLine.StartsWith("CONNECT"))
         {
-            string targetAddr = strReaded.Split(' ')[1];
-            var host = targetAddr.Split(':')[0];
-            var port = int.Parse(targetAddr.Split(':')[1]);
+            HttpReq req = HttpReq.ParseHeader(data);
+            var host_port = req.Headers["Host"].Split(":");
+            var host = host_port[0];
+            var port = int.Parse(host_port[1]);
 
             var entry = await Dns.GetHostEntryAsync(host);
             var target = CreateTargetConnection(entry, port);
 
-            if (!client.CheckConnection())
+            if (!client.CheckConnection() || target is null)
                 return;
 
-            TcpTunnel newTunel = new TcpTunnel(client, target!);
-            newTunel.OnError += Tunnel_OnError;
-            newTunel.StartAsync();
-            _tunnels.TryAdd(client.EndPoint, newTunel);
+            CreateTunnel(client, target);
 
-            var response = "HTTP/1.1 200 OK\r\n" +
-                      "Connection: close\r\n" +
-                      "Cache-Control: no-cache, no-store, must-revalidate\r\n" +
-                      "Pragma: no-cache\r\n" +
-                      "Expires: 0\r\n" +
-                      "\r\n";
-            client.WriteAsync(Encoding.UTF8.GetBytes(response)).Wait();
+            var response = new HttpRes { Status = 200, Msg = "Ok", Headers = 
+                { 
+                    {"Connection","close"},
+                    {"Cache-Control","no-cache, no-store, must-revalidate"},
+                    {"Pragma","no-cache"},
+                    {"Expires","0"}
+                }
+            };
+            client.WriteAsync(response.ToByteArray()).Wait();
         }
-        else if (strReaded.Contains("HTTP/"))
+        else if (firstLine.Contains("HTTP/"))
         {
-            //var cont = HttpContent.Parse(new HttpContent.DataUnion(data).ToString());
-            //cont.ToString();
+            var req = HttpReq.Parse(data);
+            var entry = await Dns.GetHostEntryAsync(req.Uri.Host);
+            var target = CreateTargetConnection(entry, 80);
+
+            if (!client.CheckConnection() || target is null)
+                return;
+
+            CreateTunnel(client, target);
         }
         else
         {
 
         }
     }
-
     private void Server_OnConnected(TcpClientWrapper client)
     {
         
@@ -109,6 +121,14 @@ public class HttpsProxy : IDisposable
     public void Dispose()
     {
         server.Dispose();
+    }
+
+    private void CreateTunnel(TcpClientWrapper source, TcpClientWrapper target)
+    {
+        TcpTunnel newTunel = new TcpTunnel(source, target);
+        newTunel.OnError += Tunnel_OnError;
+        var tunnelTask = newTunel.StartAsync();
+        _tunnels.TryAdd(source.EndPoint, newTunel);
     }
     private TcpClientWrapper? CreateTargetConnection(IPHostEntry entry, int port)
     {
