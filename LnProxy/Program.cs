@@ -5,7 +5,7 @@ using System.Text;
 using ProxyModule;
 using TcpModule;
 
-HttpsProxy server = new HttpsProxy();
+Proxy server = new Proxy();
 var task = server.StartAsync();
 task.Wait();
 server.Dispose();

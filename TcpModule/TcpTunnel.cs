@@ -44,11 +44,11 @@ public class TcpTunnel : AStartableAsync, IDisposable
             Target.ReadAvailableAsync(_cancel!.Token).Wait();
         }
     }
-    private async void TargetReaded(byte[] data)
+    protected async virtual void TargetReaded(byte[] data)
     {
         await Source.WriteAsync(data);
     }
-    private async void SourceReaded(byte[] data)
+    protected async virtual void SourceReaded(byte[] data)
     {
         await Target.WriteAsync(data);
     }
