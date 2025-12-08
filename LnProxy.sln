@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TcpModule", "TcpModule\TcpM
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProxyModule", "ProxyModule\ProxyModule.csproj", "{4F79A094-3730-4F3D-A138-B66F66599F1C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocksModule", "SocksModule\SocksModule.csproj", "{963B53A4-7F5D-435F-AC3C-6E3BB1683EEE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{4F79A094-3730-4F3D-A138-B66F66599F1C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4F79A094-3730-4F3D-A138-B66F66599F1C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4F79A094-3730-4F3D-A138-B66F66599F1C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{963B53A4-7F5D-435F-AC3C-6E3BB1683EEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{963B53A4-7F5D-435F-AC3C-6E3BB1683EEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{963B53A4-7F5D-435F-AC3C-6E3BB1683EEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{963B53A4-7F5D-435F-AC3C-6E3BB1683EEE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -9,23 +9,9 @@ using TcpModule;
 namespace ProxyModule;
 public class HttpTunnel : TcpTunnel
 {
-    private readonly HttpTunnelConfig _config;
-    public HttpTunnel(HttpTunnelConfig config) : base(config.source, config.target)
+    public HttpTunnel(TcpClientWrapper source, TcpClientWrapper target) : base(source, target)
     {
-        _config = config;
-    }
-    protected async override void TargetReaded(byte[] data)
-    {
-        await Source.WriteAsync(data);
-    }
-    protected async override void SourceReaded(byte[] data)
-    {
-        await Target.WriteAsync(data);
-    }
-    public struct HttpTunnelConfig
-    {
-        public TcpClientWrapper source;
-        public TcpClientWrapper target;
+        
     }
 
 }

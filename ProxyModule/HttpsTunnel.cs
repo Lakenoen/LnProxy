@@ -15,23 +15,9 @@ using static ProxyModule.IHttpPacket;
 namespace ProxyModule;
 internal class HttpsTunnel : TcpTunnel
 {
-    private readonly HttpsTunnelConfig _config;
-    public HttpsTunnel(HttpsTunnelConfig config) : base(config.source, config.target)
+    public HttpsTunnel(TcpClientWrapper source, TcpClientWrapper target) : base(source, target)
     {
-        _config = config;
-    }
-    protected async override void TargetReaded(byte[] data)
-    {
-        await Source.WriteAsync(data);
-    }
-    protected async override void SourceReaded(byte[] data)
-    {
-        await Target.WriteAsync(data);
-    }
-    public struct HttpsTunnelConfig
-    {
-        public TcpClientWrapper source;
-        public TcpClientWrapper target;
+        
     }
 
 }
