@@ -14,9 +14,4 @@ public class SocksTunnel : TcpTunnel
 
     }
 
-    protected async override void SourceReaded(byte[] data)
-    {
-        await Target.WriteAsync(data);
-    }
-
 }
