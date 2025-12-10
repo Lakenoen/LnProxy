@@ -1,13 +1,17 @@
 ﻿using System.Net;
+using NetworkModule;
 
 namespace SocksModule;
 
 public partial class SocksContext
 {
     public IPEndPoint? ServerEndPoint {  get; set; }
+    public IPEndPoint? BindServerEndPoint {  get; set; }
+    public TcpServer? BindServer { get; set; }
     public string TargetAddress { get; private set; } = string.Empty;
     public int TargetPort { get; private set; }
     public Atyp TargetType {  get; private set; }
+    public byte Method { get; private set; }
     public class TcpGreetingClientRequest
     {
         public byte Ver { get; set; } = 0;
@@ -60,17 +64,17 @@ public partial class SocksContext
     }
     public class TcpConnectionClientRequest
     {
-        public byte Ver = 0;
-        public byte Smd = 0;
-        public byte Rsv = 0;
-        public Atyp Atyp = 0;
+        public byte Ver { get; set; } = 0;
+        public ConnectType Smd { get; set; } = ConnectType.CONNECT;
+        public byte Rsv { get; set; } = 0;
+        public Atyp Atyp { get; set; } = 0;
         public byte[]? DstAddr;
         public short DstPort = 0;
         public static TcpConnectionClientRequest Parse(byte[] data)
         {
             TcpConnectionClientRequest res = new TcpConnectionClientRequest();
             res.Ver = data[0];
-            res.Smd = data[1];
+            res.Smd = (ConnectType)data[1];
             res.Rsv = data[2];
             res.Atyp = (Atyp)data[3];
             byte len = data[4];
@@ -92,7 +96,7 @@ public partial class SocksContext
             var port = BitConverter.GetBytes(DstPort).AsSpan();
             port.Reverse();
             writer.Write(Ver);
-            writer.Write(Smd);
+            writer.Write((byte)Smd);
             writer.Write(Rsv);
             writer.Write((byte)Atyp);
             writer.Write((byte)DstAddr!.Length);
@@ -106,12 +110,12 @@ public partial class SocksContext
 
     public class TcpConnectionServerResponse
     {
-        public byte Ver = 0;
-        public byte Rep = 0;
-        public byte Rsv = 0;
-        public Atyp Atyp = 0;
-        public byte[]? BndAddr;
-        public short BndPort = 0;
+        public byte Ver { get; set; } = 0;
+        public byte Rep { get; set; } = 0;
+        public byte Rsv { get; set; } = 0;
+        public Atyp Atyp { get; set; } = 0;
+        public byte[]? BndAddr { get; set; }
+        public short BndPort { get; set; } = 0;
 
         public static TcpConnectionServerResponse Parse(byte[] data)
         {
@@ -147,11 +151,91 @@ public partial class SocksContext
             return stream.ToArray();
         }
     }
+
+    public class PasswordAuthClientRequest
+    {
+        public byte Ver { get; set; } = 0;
+        public byte Ulen { get; set; } = 0;
+        public byte[]? Username { get;set; }
+        public byte Plen { get; set; } = 0;
+        public byte[]? Password { get; set; }
+        public static PasswordAuthClientRequest Parse(byte[] data)
+        {
+            PasswordAuthClientRequest res = new();
+            res.Ver = data[0];
+            res.Ulen = data[1];
+
+            res.Username = new byte[res.Ulen];
+            int shift = sizeof(byte) * 2;
+            for( byte i = 0; i < res.Ulen; i++ ) 
+                res.Username[i] = data[i + shift];
+
+            res.Plen = data[res.Username.Length + shift];
+
+            res.Password = new byte[res.Plen]; 
+            shift += res.Username.Length + sizeof(byte);
+            for (byte i = 0; i < res.Plen; i++)
+                res.Password[i] = data[i + shift];
+            return res;
+        }
+        public byte[] ToByteArray()
+        {
+            using MemoryStream stream = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(stream);
+            writer.Write(Ver);
+            writer.Write(Username!.Length);
+            writer.Write(Username);
+            writer.Write(Password!.Length);
+            writer.Write(Password);
+            writer.Flush();
+            return stream.ToArray();
+        }
+    }
+    public class PasswordAuthServerResponce
+    {
+        public byte Ver { get; set; } = 0;
+        public byte Status {  get; set; } = 0;
+        public static PasswordAuthServerResponce Parse(byte[] data)
+        {
+            PasswordAuthServerResponce res = new();
+            res.Ver = data[0];
+            res.Status = data[1];
+            return res;
+        }
+        public byte[] ToByteArray()
+        {
+            using MemoryStream stream = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(stream);
+            writer.Write(Ver);
+            writer.Write(Status);
+            writer.Flush();
+            return stream.ToArray();
+        }
+    }
     public enum Atyp : byte
     {
         IpV4 = 0x1,
         Domain = 0x3,
         IpV6 = 0x4,
+    }
+
+    public enum ConnectType : byte
+    {
+        CONNECT = 0x1,
+        BIND = 0x2,
+        UDP = 0x3
+    };
+    public enum Rep : byte
+    {
+        SUCCESS = 0x0,
+        PROXY_ERROR = 0X1,
+        NOT_ALLOW = 0X2,
+        NETWORK_UNAVAILABLE = 0X3,
+        HOST_UNAVAILABLE = 0X4,
+        CONNECTION_REFUSAL = 0X5,
+        TTL_ERROR = 0X6,
+        COMMAND_NOT_SUPPORTED = 0X7,
+        ADDRESS_TYPE_NOT_SUPPORTED = 0X8
     }
 
 };

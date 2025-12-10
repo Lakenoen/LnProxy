@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 	<ItemGroup>
-		<ProjectReference Include="..\TcpModule\TcpModule.csproj" />
+		<ProjectReference Include="..\NetworkModule\NetworkModule.csproj" />
 		<ProjectReference Include="..\SocksModule\SocksModule.csproj" />
 	</ItemGroup>
 </Project>

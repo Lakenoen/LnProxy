@@ -4,7 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using TcpModule;
+using NetworkModule;
 
 namespace ProxyModule;
 public class SocksTunnel : TcpTunnel

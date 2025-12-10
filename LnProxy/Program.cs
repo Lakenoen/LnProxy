@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using ProxyModule;
 using SocksModule;
-using TcpModule;
+using NetworkModule;
 using static SocksModule.SocksContext;
 
 Proxy server = new Proxy();

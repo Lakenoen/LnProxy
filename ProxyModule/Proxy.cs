@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using SocksModule;
-using TcpModule;
+using NetworkModule;
 using static SocksModule.SocksContext;
 
 namespace ProxyModule;
@@ -37,33 +37,75 @@ public class Proxy : IDisposable
 
     private async void Server_OnError(Exception ex, TcpClientWrapper? client)
     {
-        if (client == null)
-            return;
-
-        if (_tunnels!.Remove(client.EndPoint, out var tunnel))
+        try
         {
-            await tunnel.StopAsync();
-            tunnel.Dispose();
+            if (client is null || client.EndPoint is null)
+                return;
+
+            if (_tunnels!.Remove(client.EndPoint, out var tunnel))
+            {
+                await tunnel.StopAsync();
+                tunnel.Dispose();
+            }
+
+            if (_socksMap.TryGetValue(client.EndPoint, out var context))
+            {
+                if (context.Context.BindServer != null)
+                    context.Context.BindServer.Dispose();
+                _socksMap.Remove(client.EndPoint, out _);
+            }
+        }
+        catch (Exception)
+        {
+            return;
         }
     }
     private async void Tunnel_OnError(TcpTunnel tunnel, Exception ex)
     {
-        if (tunnel.Source.EndPoint is not null)
-            _tunnels.Remove(tunnel.Source.EndPoint, out _);
-
-        await tunnel.StopAsync();
-        tunnel.Dispose();
-    }
-
-    private async void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
-    {
-        if (tcpClientWrapper.EndPoint == null)
-            return;
-
-        if (_tunnels.Remove(tcpClientWrapper.EndPoint, out var tunnel))
+        try
         {
+            if (tunnel.Source.EndPoint is null)
+                return;
+
+            if (_socksMap.TryGetValue(tunnel.Source.EndPoint, out var context))
+            {
+                if (context.Context.BindServer != null)
+                    context.Context.BindServer.Dispose();
+                _socksMap.Remove(tunnel.Source.EndPoint, out _);
+            }
+
+            _tunnels.Remove(tunnel.Source.EndPoint, out _);
             await tunnel.StopAsync();
             tunnel.Dispose();
+        }
+        catch (Exception)
+        {
+            return;
+        }
+    }
+    private async void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
+    {
+        try
+        {
+            if (tcpClientWrapper.EndPoint == null)
+                return;
+
+            if (_tunnels.Remove(tcpClientWrapper.EndPoint, out var tunnel))
+            {
+                await tunnel.StopAsync();
+                tunnel.Dispose();
+            }
+
+            if (_socksMap.TryGetValue(tcpClientWrapper.EndPoint, out var context))
+            {
+                if (context.Context.BindServer != null)
+                    context.Context.BindServer.Dispose();
+                _socksMap.Remove(tcpClientWrapper.EndPoint, out _);
+            }
+        }
+        catch (Exception)
+        {
+            return;
         }
     }
     private async void Server_OnReaded(TcpClientWrapper client, byte[] data)
@@ -100,25 +142,85 @@ public class Proxy : IDisposable
 
         if (!_socksMap.TryGetValue(client.EndPoint, out protocol))
         {
-            var context = new SocksContext() { ServerEndPoint = IPEndPoint.Parse("0.0.0.0:0") };
+            var context = new SocksContext() { 
+                ServerEndPoint = IPEndPoint.Parse("0.0.0.0:0"),
+                BindServerEndPoint = IPEndPoint.Parse("192.168.0.103:8889")
+            };
             _socksMap.TryAdd(client.EndPoint, protocol = new SocksProtocol(context));
 
             protocol.EndInit += async (SocksContext context, byte[] resp) =>
             {
-                if (context.TargetType.Equals(SocksContext.Atyp.IpV4)
-                || context.TargetType.Equals(SocksContext.Atyp.IpV6))
+                try
                 {
-                    IPEndPoint targetEndpoint = IPEndPoint.Parse(context.TargetAddress + context.TargetPort.ToString());
-                    var target = await CreateTargetConnection(targetEndpoint);
-                    CreateTunnel(client, target, AllowProtocols.SOCKS5).StartAsync();
-                } 
-                else if (context.TargetType.Equals(SocksContext.Atyp.Domain))
-                {
-                    var entry = await Dns.GetHostEntryAsync(context.TargetAddress);
-                    var target = await CreateTargetConnection(entry, context.TargetPort);
-                    CreateTunnel(client, target, AllowProtocols.SOCKS5).StartAsync();
+                    if (context.TargetType.Equals(SocksContext.Atyp.IpV4)
+                    || context.TargetType.Equals(SocksContext.Atyp.IpV6))
+                    {
+                        IPEndPoint targetEndpoint = IPEndPoint.Parse(context.TargetAddress + context.TargetPort.ToString());
+                        var target = await CreateTargetConnection(targetEndpoint);
+                        CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                    }
+                    else if (context.TargetType.Equals(SocksContext.Atyp.Domain))
+                    {
+                        var entry = await Dns.GetHostEntryAsync(context.TargetAddress);
+                        var target = await CreateTargetConnection(entry, context.TargetPort);
+                        CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                    }
+                    await client.WriteAsync(resp);
                 }
+                catch (Exception ex)
+                {
+                    this.Server_OnError(ex, client);
+                }
+            };
+
+            protocol.CloseClient += async (SocksContext context, byte[] resp) =>
+            {
                 await client.WriteAsync(resp);
+                client.Disconnect();
+            };
+
+            protocol.Bind += async (SocksContext context, TcpConnectionServerResponse resp) => 
+            {
+                try
+                {
+                    if (context.BindServerEndPoint is null)
+                        throw new ApplicationException("The bind server address is not assigned");
+
+                    await client.WriteAsync(resp.ToByteArray());
+
+                    context.BindServer = new TcpServer(context.BindServerEndPoint);
+                    Task StartTcpServer = context.BindServer.StartAsync();
+                    if (StartTcpServer.Status != TaskStatus.Running)
+                    {
+                        resp.Rep = 0x1;
+                        await client.WriteAsync(resp.ToByteArray());
+                        client.Disconnect();
+                    }
+
+                    TcpClientWrapper? connectedClient = null;
+
+                    context.BindServer.OnConnected += externalClinet => connectedClient = externalClinet;
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+
+                    if (connectedClient is null || !connectedClient.CheckConnection())
+                    {
+                        resp.Rep = 0x5;
+                        await client.WriteAsync(resp.ToByteArray());
+                        client.Disconnect();
+                    }
+
+                    resp.Rep = 0x0;
+                    resp.BndAddr = connectedClient!.EndPoint!.Address.GetAddressBytes();
+                    resp.BndPort = (short)connectedClient.EndPoint.Port;
+
+                    CreateTunnel(client, connectedClient, AllowProtocols.SOCKS);
+
+                    await client.WriteAsync(resp.ToByteArray());
+                }
+                catch (Exception ex)
+                {
+                    this.Server_OnError(ex, client);
+                }
             };
         }
 
@@ -176,6 +278,18 @@ public class Proxy : IDisposable
     }
     public void Dispose()
     {
+        this.StopAsync().Wait();
+        foreach (var item in _tunnels)
+        {
+            item.Value.StopAsync().Wait();
+            item.Value.Dispose();
+        }
+
+        foreach (var item in _socksMap)
+        {
+            if (item.Value.Context.BindServer != null)
+                item.Value.Context.BindServer.Dispose();
+        }
         server.Dispose();
     }
     private TcpTunnel CreateTunnel(TcpClientWrapper source, TcpClientWrapper target, AllowProtocols protocol)
@@ -192,7 +306,7 @@ public class Proxy : IDisposable
         {
             newTunnel = new HttpTunnel(source, target);
         }
-        else if (protocol.Equals(AllowProtocols.SOCKS5))
+        else if (protocol.Equals(AllowProtocols.SOCKS))
         {
             newTunnel = new SocksTunnel(source, target);
         }
@@ -248,8 +362,7 @@ public class Proxy : IDisposable
     {
         HTTPS,
         HTTP,
-        SOCKS5,
-        SOCKS4
+        SOCKS,
     }
 
 }

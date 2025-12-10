@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,35 +25,110 @@ public partial class SocksContext
         }
         protected virtual void Init()
         {
-            Node iter = (_first.Next = new Node((byte[] data) =>
+            Node iter = _first.Next = new Node(Greeting, "Greeting");
+            iter.Next = new Node(Connection, "Connection");
+        }
+        private byte[] Greeting(byte[] data)
+        {
+            var req = TcpGreetingClientRequest.Parse(data);
+            try
             {
-                var req = TcpGreetingClientRequest.Parse(data);
-                var resp = new TcpGreetingServerResponce{Ver = 0x5, Method = 0x0};
-                return resp.ToByteArray();
-            }));
+                PriorityQueue<byte, short> methods = new(3);
 
-            iter.Next = new Node((byte[] data) =>
-            {
-                var req = TcpConnectionClientRequest.Parse(data);
-                Context.TargetType = req.Atyp;
-                Context.TargetAddress = Encoding.UTF8.GetString(req.DstAddr.ToArray());
-                Context.TargetPort = req.DstPort;
-
-                if (Context.ServerEndPoint is null)
-                    throw new ArgumentNullException(nameof(Context.ServerEndPoint));
-
-                var Atyp_ = Context.ServerEndPoint.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
-                var resp = new TcpConnectionServerResponse()
+                for (byte i = 0; i < req.Size; ++i)
                 {
-                    Ver = 0x5,
-                    Rep = 0x0,
-                    Atyp = Atyp_,
-                    BndAddr = Context.ServerEndPoint.Address.GetAddressBytes(),
-                    BndPort = (short)Context.ServerEndPoint.Port,
-                };
-                EndInit?.Invoke(Context, resp.ToByteArray());
+                    short priority = req.Methods[i] switch
+                    {
+                        0x0 => 1,
+                        0x1 => 2,
+                        0x2 => 3,
+                        _ => throw new ApplicationException("Method not supported")
+                    };
+                    methods.Enqueue(req.Methods[i], priority);
+                }
+
+                switch (methods.Peek()) {
+                    case 0x2: InsertNode(_current, new Node(PasswordAuth, "PasswordAuth"));break;
+                }
+
+                Context.Method = methods.Peek();
+                var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = methods.Peek() };
+                return resp.ToByteArray();
+            }
+            catch (ApplicationException)
+            {
+                Context.Method = 0xff;
+                var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = 0xff };
+                return resp.ToByteArray();
+            }
+        }
+
+        private void InsertNode(Node current, Node node)
+        {
+            var temp = current.Next;
+            current.Next = node;
+            current.Next.Next = temp;
+        }
+        private byte[] PasswordAuth(byte[] data)
+        {
+            PasswordAuthClientRequest req = PasswordAuthClientRequest.Parse(data);
+            string username = Encoding.UTF8.GetString(req.Username);
+            string password = Encoding.UTF8.GetString(req.Password);
+            PasswordAuthServerResponce res = new() { Ver = 0x1, Status = 0x0 };
+
+            if (res.Status != 0x0)
+            {
+                CloseClient?.Invoke(Context, res.ToByteArray());
                 return Array.Empty<byte>();
-            });
+            }
+
+            return res.ToByteArray();
+        }
+        private byte[] Connection(byte[] data)
+        {
+            var req = TcpConnectionClientRequest.Parse(data);
+            Context.TargetType = req.Atyp;
+            Context.TargetAddress = Encoding.UTF8.GetString(req.DstAddr.ToArray());
+            Context.TargetPort = req.DstPort;
+
+            if (Context.ServerEndPoint is null)
+                throw new ArgumentNullException(nameof(Context.ServerEndPoint));
+
+            return req.Smd switch
+            {
+                ConnectType.CONNECT => HandleConnect(req),
+                ConnectType.BIND => HandleBind(req),
+                ConnectType.UDP => Array.Empty<byte>()
+            };
+        }
+
+        private byte[] HandleBind(TcpConnectionClientRequest req)
+        {
+            var Atyp_ = Context.BindServerEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
+            var resp = new TcpConnectionServerResponse()
+            {
+                Ver = req.Ver,
+                Rep = (byte)RepType.SUCCESS,
+                Atyp = Atyp_,
+                BndAddr = Context.BindServerEndPoint.Address.GetAddressBytes(),
+                BndPort = (short)Context.BindServerEndPoint.Port,
+            };
+            Bind?.Invoke(Context, resp);
+            return Array.Empty<byte>();
+        }
+        private byte[] HandleConnect(TcpConnectionClientRequest req)
+        {
+            var Atyp_ = Context.ServerEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
+            var resp = new TcpConnectionServerResponse()
+            {
+                Ver = req.Ver,
+                Rep = (byte)RepType.SUCCESS,
+                Atyp = Atyp_,
+                BndAddr = Context.ServerEndPoint.Address.GetAddressBytes(),
+                BndPort = (short)Context.ServerEndPoint.Port,
+            };
+            EndInit?.Invoke(Context, resp.ToByteArray());
+            return Array.Empty<byte>();
         }
         public byte[] InitAsServer(byte[] data)
         {
@@ -101,6 +177,8 @@ public partial class SocksContext
 
         public delegate byte[] Stage(byte[] data);
         public event Action<SocksContext, byte[]>? EndInit;
+        public event Action<SocksContext, byte[]>? CloseClient;
+        public event Action<SocksContext, TcpConnectionServerResponse>? Bind;
     }
 
 }
