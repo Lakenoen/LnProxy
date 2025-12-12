@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using static SocksModule.SocksContext;
@@ -87,21 +88,54 @@ public partial class SocksContext
         private byte[] Connection(byte[] data)
         {
             var req = TcpConnectionClientRequest.Parse(data);
-            Context.TargetType = req.Atyp;
-            Context.TargetAddress = Encoding.UTF8.GetString(req.DstAddr.ToArray());
-            Context.TargetPort = req.DstPort;
-
-            if (Context.ServerEndPoint is null)
-                throw new ArgumentNullException(nameof(Context.ServerEndPoint));
-
-            return req.Smd switch
+            try
             {
-                ConnectType.CONNECT => HandleConnect(req),
-                ConnectType.BIND => HandleBind(req),
-                ConnectType.UDP => Array.Empty<byte>()
-            };
+                Context.TargetType = req.Atyp;
+                Context.TargetAddress = req.Atyp switch
+                {
+                    SocksContext.Atyp.Domain => Encoding.UTF8.GetString(req.DstAddr.ToArray()),
+                    _ => new IPAddress(req.DstAddr).ToString()
+                };
+
+                Context.TargetPort = req.DstPort;
+
+                return req.Smd switch
+                {
+                    ConnectType.CONNECT => HandleConnect(req),
+                    ConnectType.BIND => HandleBind(req),
+                    ConnectType.UDP => HandleUdp(req),
+                    _ => throw new ApplicationException("Command not supported")
+                };
+            }
+            catch (ApplicationException e) when (e.Message.Equals("Command not supported"))
+            {
+                TcpConnectionServerResponse response = new TcpConnectionServerResponse()
+                {
+                    Ver = req.Ver,
+                    Rep = (byte)RepType.COMMAND_NOT_SUPPORTED,
+                    Atyp = Context.ServerUdpEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6,
+                    BndAddr = Context.ServerUdpEndPoint.Address.GetAddressBytes(),
+                    BndPort = (short)Context.ServerUdpEndPoint.Port,
+                };
+                return response.ToByteArray();
+            }
         }
 
+        private byte[] HandleUdp(TcpConnectionClientRequest req)
+        {
+            var Atyp_ = Context.ServerUdpEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
+            var resp = new TcpConnectionServerResponse()
+            {
+                Ver = req.Ver,
+                Rep = (byte)RepType.SUCCESS,
+                Atyp = Atyp_,
+                BndAddr = Context.ServerUdpEndPoint.Address.GetAddressBytes(),
+                BndPort = (short)Context.ServerUdpEndPoint.Port,
+            };
+            Context.ConnectionType = ConnectType.UDP;
+            EndInit?.Invoke(Context, resp);
+            return Array.Empty<byte>();
+        }
         private byte[] HandleBind(TcpConnectionClientRequest req)
         {
             var Atyp_ = Context.BindServerEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
@@ -113,33 +147,38 @@ public partial class SocksContext
                 BndAddr = Context.BindServerEndPoint.Address.GetAddressBytes(),
                 BndPort = (short)Context.BindServerEndPoint.Port,
             };
+            Context.ConnectionType = ConnectType.BIND;
             Bind?.Invoke(Context, resp);
             return Array.Empty<byte>();
         }
         private byte[] HandleConnect(TcpConnectionClientRequest req)
         {
-            var Atyp_ = Context.ServerEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
+            var Atyp_ = Context.ServerTcpEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
             var resp = new TcpConnectionServerResponse()
             {
                 Ver = req.Ver,
                 Rep = (byte)RepType.SUCCESS,
                 Atyp = Atyp_,
-                BndAddr = Context.ServerEndPoint.Address.GetAddressBytes(),
-                BndPort = (short)Context.ServerEndPoint.Port,
+                BndAddr = Context.ServerTcpEndPoint.Address.GetAddressBytes(),
+                BndPort = (short)Context.ServerTcpEndPoint.Port,
             };
-            EndInit?.Invoke(Context, resp.ToByteArray());
+            Context.ConnectionType = ConnectType.CONNECT;
+            EndInit?.Invoke(Context, resp);
             return Array.Empty<byte>();
         }
         public byte[] InitAsServer(byte[] data)
         {
-            if (MoveNext())
+            try
             {
-                Node node = (Node)Current;
-                return node.Stage!.Invoke(data);
+                if (MoveNext())
+                {
+                    Node node = (Node)Current;
+                    return node.Stage!.Invoke(data);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                
+                OnError?.Invoke(this.Context, ex);
             }
             return Array.Empty<byte>();
         }
@@ -176,9 +215,10 @@ public partial class SocksContext
         }
 
         public delegate byte[] Stage(byte[] data);
-        public event Action<SocksContext, byte[]>? EndInit;
+        public event Action<SocksContext, TcpConnectionServerResponse>? EndInit;
         public event Action<SocksContext, byte[]>? CloseClient;
         public event Action<SocksContext, TcpConnectionServerResponse>? Bind;
+        public event Action<SocksContext, Exception>? OnError;
     }
 
 }

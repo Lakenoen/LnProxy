@@ -96,12 +96,11 @@ public class TcpServer : AStartableAsync, IDisposable
             TcpClient client = _listener.AcceptTcpClientAsync(_cancel!.Token).Result;
             var wrapper = new TcpClientWrapper(client);
             wrapper.OnDisconnect += Wrapper_OnDisconnect;
+            OnConnected?.Invoke(wrapper);
 
             CancellationTokenSource clientCancel = new CancellationTokenSource();
             var readTask = Read(wrapper, clientCancel.Token);
             _clients.TryAdd(wrapper, new ClientInfo(wrapper, DateTime.Now, clientCancel, readTask));
-
-            OnConnected?.Invoke(wrapper);
         }
     }
 

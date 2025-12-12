@@ -36,12 +36,19 @@ public class TcpTunnel : AStartableAsync, IDisposable
     }
     protected override void Start()
     {
-        while (!_cancel!.Token.IsCancellationRequested)
+        try
         {
-            if (!Source.CheckConnection() || !Target.CheckConnection())
-                return;
+            while (!_cancel!.Token.IsCancellationRequested)
+            {
+                if (!Source.CheckConnection() || !Target.CheckConnection())
+                    return;
 
-            Target.ReadAvailableAsync(_cancel!.Token).Wait();
+                Target.ReadAvailableAsync(_cancel!.Token).Wait();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
     }
     protected async virtual void TargetReaded(byte[] data)

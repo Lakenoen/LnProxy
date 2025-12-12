@@ -1,11 +1,14 @@
 ﻿using System.Net;
+using System.Runtime.ConstrainedExecution;
 using NetworkModule;
 
 namespace SocksModule;
 
 public partial class SocksContext
 {
-    public IPEndPoint? ServerEndPoint {  get; set; }
+    public ConnectType ConnectionType { get; private set; } = ConnectType.CONNECT;
+    public IPEndPoint? ServerTcpEndPoint {  get; set; }
+    public IPEndPoint? ServerUdpEndPoint { get; set; }
     public IPEndPoint? BindServerEndPoint {  get; set; }
     public TcpServer? BindServer { get; set; }
     public string TargetAddress { get; private set; } = string.Empty;
@@ -182,7 +185,7 @@ public partial class SocksContext
         {
             using MemoryStream stream = new MemoryStream();
             using BinaryWriter writer = new BinaryWriter(stream);
-            writer.Write(Ver);
+            writer.Write(Ver); 
             writer.Write(Username!.Length);
             writer.Write(Username);
             writer.Write(Password!.Length);
@@ -212,6 +215,61 @@ public partial class SocksContext
             return stream.ToArray();
         }
     }
+
+    public class UdpPacket
+    {
+        public short Rsv { get; set; } = 0;
+        public byte Frag { get; set; } = 0;
+        public Atyp Atyp_ { get; set; } = Atyp.IpV4;
+        public byte[]? DstAddr { get; set; }
+        public short DstPort { get; set; } = 0;
+        public byte[]? Data { get; set; }
+        public static UdpPacket Parse(byte[] data)
+        {
+            UdpPacket res = new();
+            res.Frag = data[2];
+            res.Atyp_ = (Atyp)data[3];
+            byte len = data[4];
+            res.DstAddr = new byte[len];
+            byte shift = sizeof(byte) * 5;
+
+            for (byte i = 0; i < len; i++)
+            {
+                res.DstAddr[i] = data[i + shift];
+            }
+
+            var portSpan = data.AsSpan(res.DstAddr.Length + shift, sizeof(short));
+            portSpan.Reverse();
+            res.DstPort = BitConverter.ToInt16(portSpan);
+
+            var dataSizeSpan = data.AsSpan(res.DstAddr.Length + shift + sizeof(short), sizeof(short));
+            short dataSize = (short)BitConverter.ToInt16(dataSizeSpan);
+            res.Data = new byte[dataSize];
+            for(int i = 0; i < dataSize; i++)
+            {
+                res.Data[i] = data[i + res.DstAddr.Length + shift + sizeof(short) * 2];
+            }
+
+            return res;
+        }
+        public byte[] ToByteArray()
+        {
+            using MemoryStream stream = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(stream);
+            var port = BitConverter.GetBytes(DstPort).AsSpan();
+            port.Reverse();
+            writer.Write(this.Rsv);
+            writer.Write(this.Frag);
+            writer.Write((byte)this.Atyp_);
+            writer.Write((byte)this.DstAddr!.Length);
+            writer.Write(this.DstAddr);
+            writer.Write(port);
+            writer.Write((short)Data!.Length);
+            writer.Write(this.Data);
+            writer.Flush();
+            return stream.ToArray();
+        }
+    }
     public enum Atyp : byte
     {
         IpV4 = 0x1,
@@ -225,7 +283,7 @@ public partial class SocksContext
         BIND = 0x2,
         UDP = 0x3
     };
-    public enum Rep : byte
+    public enum RepType : byte
     {
         SUCCESS = 0x0,
         PROXY_ERROR = 0X1,

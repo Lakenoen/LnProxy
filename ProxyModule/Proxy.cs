@@ -13,8 +13,7 @@ using static SocksModule.SocksContext;
 namespace ProxyModule;
 public class Proxy : IDisposable
 {
-    private ConcurrentDictionary<IPEndPoint, SocksProtocol> _socksMap = new();
-    private ConcurrentDictionary<IPEndPoint, TcpTunnel> _tunnels = new();
+    private ConcurrentDictionary<IPEndPoint, ProxyClientContext> _context = new();
     private readonly TcpServer server;
     public Proxy()
     {
@@ -42,17 +41,20 @@ public class Proxy : IDisposable
             if (client is null || client.EndPoint is null)
                 return;
 
-            if (_tunnels!.Remove(client.EndPoint, out var tunnel))
+            if (_context!.Remove(client.EndPoint, out var context))
             {
-                await tunnel.StopAsync();
-                tunnel.Dispose();
-            }
+                var TcpTask = context.TcpTunnel?.StopAsync();
+                var UdpTask = context.UdpTunnel?.StopAsync();
 
-            if (_socksMap.TryGetValue(client.EndPoint, out var context))
-            {
-                if (context.Context.BindServer != null)
-                    context.Context.BindServer.Dispose();
-                _socksMap.Remove(client.EndPoint, out _);
+                if(TcpTask != null)
+                    await TcpTask;
+
+                if (UdpTask != null)
+                    await UdpTask;
+
+                context.SocksProtocol?.Context?.BindServer?.Dispose();
+                context.TcpTunnel?.Dispose();
+                context.UdpTunnel?.Dispose();
             }
         }
         catch (Exception)
@@ -67,40 +69,48 @@ public class Proxy : IDisposable
             if (tunnel.Source.EndPoint is null)
                 return;
 
-            if (_socksMap.TryGetValue(tunnel.Source.EndPoint, out var context))
+            if (_context!.Remove(tunnel.Source.EndPoint, out var context))
             {
-                if (context.Context.BindServer != null)
-                    context.Context.BindServer.Dispose();
-                _socksMap.Remove(tunnel.Source.EndPoint, out _);
-            }
+                var TcpTask = context.TcpTunnel?.StopAsync();
+                var UdpTask = context.UdpTunnel?.StopAsync();
 
-            _tunnels.Remove(tunnel.Source.EndPoint, out _);
-            await tunnel.StopAsync();
-            tunnel.Dispose();
+                if (TcpTask != null)
+                    await TcpTask;
+
+                if (UdpTask != null)
+                    await UdpTask;
+
+                context.SocksProtocol?.Context?.BindServer?.Dispose();
+                context.TcpTunnel?.Dispose();
+                context.UdpTunnel?.Dispose();
+            }
         }
         catch (Exception)
         {
             return;
         }
     }
-    private async void Server_OnClientDisconnect(TcpClientWrapper tcpClientWrapper)
+    private async void Server_OnClientDisconnect(TcpClientWrapper client)
     {
         try
         {
-            if (tcpClientWrapper.EndPoint == null)
+            if (client.EndPoint == null)
                 return;
 
-            if (_tunnels.Remove(tcpClientWrapper.EndPoint, out var tunnel))
+            if (_context!.Remove(client.EndPoint, out var context))
             {
-                await tunnel.StopAsync();
-                tunnel.Dispose();
-            }
+                var TcpTask = context.TcpTunnel?.StopAsync();
+                var UdpTask = context.UdpTunnel?.StopAsync();
 
-            if (_socksMap.TryGetValue(tcpClientWrapper.EndPoint, out var context))
-            {
-                if (context.Context.BindServer != null)
-                    context.Context.BindServer.Dispose();
-                _socksMap.Remove(tcpClientWrapper.EndPoint, out _);
+                if (TcpTask != null)
+                    await TcpTask;
+
+                if (UdpTask != null)
+                    await UdpTask;
+
+                context.SocksProtocol?.Context?.BindServer?.Dispose();
+                context.TcpTunnel?.Dispose();
+                context.UdpTunnel?.Dispose();
             }
         }
         catch (Exception)
@@ -110,7 +120,7 @@ public class Proxy : IDisposable
     }
     private async void Server_OnReaded(TcpClientWrapper client, byte[] data)
     {
-        if (client.EndPoint == null)
+        if (client.EndPoint == null || !_context.TryGetValue(client.EndPoint, out _))
             throw new ApplicationException("EndPoint is null");
 
         string? firstLine = GetFirstLine(data);
@@ -135,42 +145,72 @@ public class Proxy : IDisposable
 
     private async Task HandleSocks(TcpClientWrapper client, byte[] data)
     {
-        if (client.EndPoint is null || _tunnels.ContainsKey(client.EndPoint))
+        _context.TryGetValue(client.EndPoint!, out ProxyClientContext? proxyContext);
+
+        if (proxyContext is null || proxyContext.TcpTunnel is not null)
             return;
 
-        SocksProtocol? protocol;
+        SocksProtocol? protocol = proxyContext.SocksProtocol;
 
-        if (!_socksMap.TryGetValue(client.EndPoint, out protocol))
+        if (protocol is null)
         {
             var context = new SocksContext() { 
-                ServerEndPoint = IPEndPoint.Parse("0.0.0.0:0"),
-                BindServerEndPoint = IPEndPoint.Parse("192.168.0.103:8889")
+                ServerTcpEndPoint = IPEndPoint.Parse("0.0.0.0:0"),
+                BindServerEndPoint = IPEndPoint.Parse("192.168.0.103:8889"),
+                ServerUdpEndPoint = IPEndPoint.Parse("192.168.0.103:8890")
             };
-            _socksMap.TryAdd(client.EndPoint, protocol = new SocksProtocol(context));
+            protocol = proxyContext.SocksProtocol = new SocksProtocol(context);
 
-            protocol.EndInit += async (SocksContext context, byte[] resp) =>
+            protocol.EndInit += async (SocksContext context, TcpConnectionServerResponse resp) =>
             {
                 try
                 {
                     if (context.TargetType.Equals(SocksContext.Atyp.IpV4)
                     || context.TargetType.Equals(SocksContext.Atyp.IpV6))
                     {
-                        IPEndPoint targetEndpoint = IPEndPoint.Parse(context.TargetAddress + context.TargetPort.ToString());
-                        var target = await CreateTargetConnection(targetEndpoint);
-                        CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                        IPEndPoint targetEndpoint = IPEndPoint.Parse(context.TargetAddress + ":" + context.TargetPort.ToString());
+                        switch (context.ConnectionType)
+                        {
+                            case ConnectType.CONNECT: {
+                                    var target = new TcpClientWrapper(targetEndpoint);
+                                    CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                                };break;
+                            case ConnectType.UDP:
+                                {
+                                    CreateUdpTunnel(targetEndpoint, proxyContext).StartAsync();
+                                };break;
+                        }
                     }
                     else if (context.TargetType.Equals(SocksContext.Atyp.Domain))
                     {
                         var entry = await Dns.GetHostEntryAsync(context.TargetAddress);
-                        var target = await CreateTargetConnection(entry, context.TargetPort);
-                        CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                        switch (context.ConnectionType)
+                        {
+                            case ConnectType.CONNECT:
+                                {
+                                    var target = await CreateTargetConnection(entry, context.TargetPort);
+                                    CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                                };break;
+                            case ConnectType.UDP:
+                                {
+                                    IPEndPoint sourceUdpEndPoint = new IPEndPoint(entry.AddressList.First(), context.TargetPort);
+                                    CreateUdpTunnel(sourceUdpEndPoint, proxyContext).StartAsync();
+                                };break;
+                        }
                     }
-                    await client.WriteAsync(resp);
+                    await client.WriteAsync(resp.ToByteArray());
                 }
                 catch (Exception ex)
                 {
+                    resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
+                    await client.WriteAsync(resp.ToByteArray());
                     this.Server_OnError(ex, client);
                 }
+            };
+
+            protocol.OnError += (sender, e) =>
+            {
+                this.Server_OnError(e, client);
             };
 
             protocol.CloseClient += async (SocksContext context, byte[] resp) =>
@@ -192,7 +232,7 @@ public class Proxy : IDisposable
                     Task StartTcpServer = context.BindServer.StartAsync();
                     if (StartTcpServer.Status != TaskStatus.Running)
                     {
-                        resp.Rep = 0x1;
+                        resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
                         await client.WriteAsync(resp.ToByteArray());
                         client.Disconnect();
                     }
@@ -204,7 +244,7 @@ public class Proxy : IDisposable
 
                     if (connectedClient is null || !connectedClient.CheckConnection())
                     {
-                        resp.Rep = 0x5;
+                        resp.Rep = (byte)SocksContext.RepType.CONNECTION_REFUSAL;
                         await client.WriteAsync(resp.ToByteArray());
                         client.Disconnect();
                     }
@@ -219,20 +259,31 @@ public class Proxy : IDisposable
                 }
                 catch (Exception ex)
                 {
+                    resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
+                    await client.WriteAsync(resp.ToByteArray());
                     this.Server_OnError(ex, client);
                 }
             };
         }
 
-        var sendData = protocol.InitAsServer(data);
-        if(sendData.Length > 0) 
+        var sendData = protocol?.InitAsServer(data);
+        if(sendData is not null && sendData.Length > 0) 
             await client.WriteAsync(sendData);
     }
+
+    private IPEndPoint UdpTunnel_OnRecv(SocksContext context,IPEndPoint from, IPEndPoint clientEndPoint, byte[] data)
+    {
+        if ( (from.Address.Equals(clientEndPoint.Address) && clientEndPoint.Port == 0)
+            || from.Equals(clientEndPoint))
+        {
+            var packet = SocksContext.UdpPacket.Parse(data);
+            return new IPEndPoint(new IPAddress(packet.DstAddr), packet.DstPort);
+        }
+        return clientEndPoint;
+    }
+
     private async Task HandleHttps(TcpClientWrapper client, byte[] data)
     {
-        if (_tunnels.ContainsKey(client.EndPoint))
-            return;
-
         HttpRequest req = HttpRequest.ParseHeader(data);
         var host_port = req.Headers["Host"].Split(":");
         var host = host_port[0];
@@ -274,23 +325,39 @@ public class Proxy : IDisposable
     }
     private void Server_OnConnected(TcpClientWrapper client)
     {
-        
+        if (client.EndPoint is null)
+            return;
+
+        _context.TryAdd(client.EndPoint, new ProxyClientContext());
     }
     public void Dispose()
     {
         this.StopAsync().Wait();
-        foreach (var item in _tunnels)
+        foreach (var item in _context)
         {
-            item.Value.StopAsync().Wait();
-            item.Value.Dispose();
+            var TcpTask = item.Value.TcpTunnel?.StopAsync();
+            var UdpTask = item.Value.UdpTunnel?.StopAsync();
+
+            if (TcpTask != null)
+                TcpTask.Wait();
+
+            if (UdpTask != null)
+                UdpTask.Wait();
+
+            item.Value.SocksProtocol?.Context?.BindServer?.Dispose();
+            item.Value.TcpTunnel?.Dispose();
+            item.Value.UdpTunnel?.Dispose();
         }
 
-        foreach (var item in _socksMap)
-        {
-            if (item.Value.Context.BindServer != null)
-                item.Value.Context.BindServer.Dispose();
-        }
         server.Dispose();
+    }
+    private UdpTunnel CreateUdpTunnel(IPEndPoint sourceEndPoint, ProxyClientContext proxyContext)
+    {
+        SocksContext context = proxyContext.SocksProtocol!.Context;
+        proxyContext.UdpTunnel = new UdpTunnel(context.ServerUdpEndPoint!.Port);
+
+        proxyContext.UdpTunnel.OnRecv += (from, data) => UdpTunnel_OnRecv(context, from, sourceEndPoint, data);
+        return proxyContext.UdpTunnel;
     }
     private TcpTunnel CreateTunnel(TcpClientWrapper source, TcpClientWrapper target, AllowProtocols protocol)
     {
@@ -311,7 +378,12 @@ public class Proxy : IDisposable
             newTunnel = new SocksTunnel(source, target);
         }
         newTunnel!.OnError += Tunnel_OnError;
-        _tunnels.TryAdd(source.EndPoint, newTunnel);
+
+        if (_context.TryGetValue(source.EndPoint, out var proxyContext))
+            proxyContext.TcpTunnel = newTunnel;
+        else
+            throw new ApplicationException("Сlient not found");
+
         return newTunnel;
     }
     private async Task<TcpClientWrapper> CreateTargetConnection(IPHostEntry entry, int port)
@@ -346,10 +418,6 @@ public class Proxy : IDisposable
         }
         throw new ApplicationException("Could not connect or find IP address");
     }
-    private async Task<TcpClientWrapper> CreateTargetConnection(IPEndPoint addr)
-    {
-        return new TcpClientWrapper(addr);
-    }
     private string? GetFirstLine(byte[] data)
     {
         using MemoryStream stream = new MemoryStream(data);
@@ -363,6 +431,13 @@ public class Proxy : IDisposable
         HTTPS,
         HTTP,
         SOCKS,
+    }
+
+    private class ProxyClientContext()
+    {
+        public TcpTunnel? TcpTunnel { get; set; } = null;
+        public UdpTunnel? UdpTunnel { get; set; } = null;
+        public SocksProtocol? SocksProtocol { get; set; } = null;
     }
 
 }
