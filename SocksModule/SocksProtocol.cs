@@ -29,9 +29,23 @@ public partial class SocksContext
             Node iter = _first.Next = new Node(Greeting, "Greeting");
             iter.Next = new Node(Connection, "Connection");
         }
+
+        private byte[] GreetingV4(byte[] data)
+        {
+            var resp = new TcpGreetingServerResponceV4
+            {
+
+            };
+            EndInitV4?.Invoke(Context, resp);
+            return Array.Empty<byte>();
+        }
         private byte[] Greeting(byte[] data)
         {
+            if (data[0] == 0x4 || data[0] == 0x0)
+                return GreetingV4(data);
+
             var req = TcpGreetingClientRequest.Parse(data);
+            Context.Ver = req.Ver;
             try
             {
                 PriorityQueue<byte, short> methods = new(3);
@@ -41,8 +55,7 @@ public partial class SocksContext
                     short priority = req.Methods[i] switch
                     {
                         0x0 => 1,
-                        0x1 => 2,
-                        0x2 => 3,
+                        0x2 => 2,
                         _ => throw new ApplicationException("Method not supported")
                     };
                     methods.Enqueue(req.Methods[i], priority);
@@ -115,7 +128,7 @@ public partial class SocksContext
                     Rep = (byte)RepType.COMMAND_NOT_SUPPORTED,
                     Atyp = Context.ServerUdpEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6,
                     BndAddr = Context.ServerUdpEndPoint.Address.GetAddressBytes(),
-                    BndPort = (short)Context.ServerUdpEndPoint.Port,
+                    BndPort = (ushort)Context.ServerUdpEndPoint.Port,
                 };
                 return response.ToByteArray();
             }
@@ -130,7 +143,7 @@ public partial class SocksContext
                 Rep = (byte)RepType.SUCCESS,
                 Atyp = Atyp_,
                 BndAddr = Context.ServerUdpEndPoint.Address.GetAddressBytes(),
-                BndPort = (short)Context.ServerUdpEndPoint.Port,
+                BndPort = (ushort)Context.ServerUdpEndPoint.Port,
             };
             Context.ConnectionType = ConnectType.UDP;
             EndInit?.Invoke(Context, resp);
@@ -138,6 +151,14 @@ public partial class SocksContext
         }
         private byte[] HandleBind(TcpConnectionClientRequest req)
         {
+            var ip = new IPAddress(req.DstAddr!);
+            if (ip.Equals(IPAddress.Any))
+                ip = Context.BindServerEndPoint!.Address;
+            var port = req.DstPort;
+            if (port == 0)
+                port = (ushort)Context.BindServerEndPoint!.Port;
+
+            Context.BindServerEndPoint = new IPEndPoint(ip, port);
             var Atyp_ = Context.BindServerEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
             var resp = new TcpConnectionServerResponse()
             {
@@ -145,7 +166,7 @@ public partial class SocksContext
                 Rep = (byte)RepType.SUCCESS,
                 Atyp = Atyp_,
                 BndAddr = Context.BindServerEndPoint.Address.GetAddressBytes(),
-                BndPort = (short)Context.BindServerEndPoint.Port,
+                BndPort = (ushort)Context.BindServerEndPoint.Port,
             };
             Context.ConnectionType = ConnectType.BIND;
             Bind?.Invoke(Context, resp);
@@ -160,7 +181,7 @@ public partial class SocksContext
                 Rep = (byte)RepType.SUCCESS,
                 Atyp = Atyp_,
                 BndAddr = Context.ServerTcpEndPoint.Address.GetAddressBytes(),
-                BndPort = (short)Context.ServerTcpEndPoint.Port,
+                BndPort = (ushort)Context.ServerTcpEndPoint.Port,
             };
             Context.ConnectionType = ConnectType.CONNECT;
             EndInit?.Invoke(Context, resp);
@@ -215,6 +236,7 @@ public partial class SocksContext
         }
 
         public delegate byte[] Stage(byte[] data);
+        public event Action<SocksContext, TcpGreetingServerResponceV4>? EndInitV4;
         public event Action<SocksContext, TcpConnectionServerResponse>? EndInit;
         public event Action<SocksContext, byte[]>? CloseClient;
         public event Action<SocksContext, TcpConnectionServerResponse>? Bind;

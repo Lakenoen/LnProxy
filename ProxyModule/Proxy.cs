@@ -9,6 +9,7 @@ using System.Text;
 using SocksModule;
 using NetworkModule;
 using static SocksModule.SocksContext;
+using System.Net.Sockets;
 
 namespace ProxyModule;
 public class Proxy : IDisposable
@@ -154,7 +155,7 @@ public class Proxy : IDisposable
 
         if (protocol is null)
         {
-            var context = new SocksContext() { 
+            var context = new SocksContext() {
                 ServerTcpEndPoint = IPEndPoint.Parse("0.0.0.0:0"),
                 BindServerEndPoint = IPEndPoint.Parse("192.168.0.103:8889"),
                 ServerUdpEndPoint = IPEndPoint.Parse("192.168.0.103:8890")
@@ -226,16 +227,17 @@ public class Proxy : IDisposable
                     if (context.BindServerEndPoint is null)
                         throw new ApplicationException("The bind server address is not assigned");
 
-                    await client.WriteAsync(resp.ToByteArray());
-
                     context.BindServer = new TcpServer(context.BindServerEndPoint);
                     Task StartTcpServer = context.BindServer.StartAsync();
-                    if (StartTcpServer.Status != TaskStatus.Running)
+
+                    if (StartTcpServer.Status == TaskStatus.Canceled || StartTcpServer.Status == TaskStatus.Faulted)
                     {
                         resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
                         await client.WriteAsync(resp.ToByteArray());
                         client.Disconnect();
                     }
+
+                    await client.WriteAsync(resp.ToByteArray());
 
                     TcpClientWrapper? connectedClient = null;
 
@@ -247,11 +249,12 @@ public class Proxy : IDisposable
                         resp.Rep = (byte)SocksContext.RepType.CONNECTION_REFUSAL;
                         await client.WriteAsync(resp.ToByteArray());
                         client.Disconnect();
+                        return;
                     }
 
                     resp.Rep = 0x0;
                     resp.BndAddr = connectedClient!.EndPoint!.Address.GetAddressBytes();
-                    resp.BndPort = (short)connectedClient.EndPoint.Port;
+                    resp.BndPort = (ushort)connectedClient.EndPoint.Port;
 
                     CreateTunnel(client, connectedClient, AllowProtocols.SOCKS);
 

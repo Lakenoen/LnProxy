@@ -6,6 +6,7 @@ namespace SocksModule;
 
 public partial class SocksContext
 {
+    public byte Ver { get; private set; } = 0x5;
     public ConnectType ConnectionType { get; private set; } = ConnectType.CONNECT;
     public IPEndPoint? ServerTcpEndPoint {  get; set; }
     public IPEndPoint? ServerUdpEndPoint { get; set; }
@@ -15,6 +16,14 @@ public partial class SocksContext
     public int TargetPort { get; private set; }
     public Atyp TargetType {  get; private set; }
     public byte Method { get; private set; }
+    public class TcpGreetingClientRequestV4
+    {
+
+    }
+    public class TcpGreetingServerResponceV4
+    {
+
+    }
     public class TcpGreetingClientRequest
     {
         public byte Ver { get; set; } = 0;
@@ -72,7 +81,7 @@ public partial class SocksContext
         public byte Rsv { get; set; } = 0;
         public Atyp Atyp { get; set; } = 0;
         public byte[]? DstAddr;
-        public short DstPort = 0;
+        public ushort DstPort = 0;
         public static TcpConnectionClientRequest Parse(byte[] data)
         {
             TcpConnectionClientRequest res = new TcpConnectionClientRequest();
@@ -89,7 +98,7 @@ public partial class SocksContext
             }
             var portSpan = data.AsSpan(res.DstAddr.Length + shift + 1, sizeof(short));
             portSpan.Reverse();
-            res.DstPort = BitConverter.ToInt16(portSpan);
+            res.DstPort = BitConverter.ToUInt16(portSpan);
             return res;
         }
         public byte[] ToByteArray()
@@ -118,7 +127,7 @@ public partial class SocksContext
         public byte Rsv { get; set; } = 0;
         public Atyp Atyp { get; set; } = 0;
         public byte[]? BndAddr { get; set; }
-        public short BndPort { get; set; } = 0;
+        public ushort BndPort { get; set; } = 0;
 
         public static TcpConnectionServerResponse Parse(byte[] data)
         {
@@ -135,7 +144,7 @@ public partial class SocksContext
             }
             var portSpan = data.AsSpan(res.BndAddr.Count() + shift, sizeof(short));
             portSpan.Reverse();
-            res.BndPort = BitConverter.ToInt16(portSpan);
+            res.BndPort = BitConverter.ToUInt16(portSpan);
             return res;
         }
         public byte[] ToByteArray()
@@ -222,7 +231,7 @@ public partial class SocksContext
         public byte Frag { get; set; } = 0;
         public Atyp Atyp_ { get; set; } = Atyp.IpV4;
         public byte[]? DstAddr { get; set; }
-        public short DstPort { get; set; } = 0;
+        public ushort DstPort { get; set; } = 0;
         public byte[]? Data { get; set; }
         public static UdpPacket Parse(byte[] data)
         {
@@ -240,7 +249,7 @@ public partial class SocksContext
 
             var portSpan = data.AsSpan(res.DstAddr.Length + shift, sizeof(short));
             portSpan.Reverse();
-            res.DstPort = BitConverter.ToInt16(portSpan);
+            res.DstPort = BitConverter.ToUInt16(portSpan);
 
             var dataSizeSpan = data.AsSpan(res.DstAddr.Length + shift + sizeof(short), sizeof(short));
             short dataSize = (short)BitConverter.ToInt16(dataSizeSpan);
