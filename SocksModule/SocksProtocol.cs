@@ -29,56 +29,8 @@ public partial class SocksContext
             Node iter = _first.Next = new Node(Greeting, "Greeting");
             iter.Next = new Node(Connection, "Connection");
         }
-
-        private byte[] HandleBindV4(TcpGreetingClientRequestV4 req)
-        {
-            Context.BindServerEndPoint = MakeServerEndPoint(req.Address!, req.DstPort);
-            var resp = new TcpGreetingServerResponceV4
-            {
-                VN = req.VN,
-                CD = RepTypeV4.REQUEST_GRANTED,
-                DstPort = (ushort)Context.BindServerEndPoint.Port,
-                Address = Context.BindServerEndPoint.Address
-            };
-            Context.ConnectionType = ConnectType.BIND;
-            BindV4?.Invoke(Context, resp);
-            return Array.Empty<byte>();
-        }
-        private byte[] GreetingV4(byte[] data)
-        {
-            var req = TcpGreetingClientRequestV4.Parse(data);
-
-            if (req.CD.Equals(0x2))
-                return HandleBindV4(req);
-
-            var resp = new TcpGreetingServerResponceV4
-            {
-                VN = 0x0,
-                CD = RepTypeV4.REQUEST_GRANTED,
-                DstPort = req.DstPort,
-                Address = IPAddress.Any
-            };
-            Context.TargetPort = resp.DstPort;
-
-            if (req.hostName == string.Empty)
-            {
-                Context.TargetAddress = req.Address!.ToString();
-                Context.TargetType = Atyp.IpV4;
-            }
-            else
-            {
-                Context.TargetAddress = req.hostName;
-                Context.TargetType = Atyp.Domain;
-            }
-
-            EndInitV4?.Invoke(Context, resp);
-            return Array.Empty<byte>();
-        }
         private byte[] Greeting(byte[] data)
         {
-            if (data[0] == 0x4 || data[0] == 0x0)
-                return GreetingV4(data);
-
             var req = TcpGreetingClientRequest.Parse(data);
             Context.Ver = req.Ver;
             try
@@ -295,10 +247,8 @@ public partial class SocksContext
         }
 
         public delegate byte[] Stage(byte[] data);
-        public event Action<SocksContext, TcpGreetingServerResponceV4>? EndInitV4;
         public event Action<SocksContext, TcpConnectionServerResponse>? EndInit;
         public event Action<SocksContext, TcpConnectionServerResponse>? Bind;
-        public event Action<SocksContext, TcpGreetingServerResponceV4>? BindV4;
         public event Action<SocksContext, Exception>? OnError;
     }
 

@@ -24,104 +24,7 @@ public partial class SocksContext
     public int TargetPort { get; private set; }
     public Atyp TargetType {  get; private set; }
     public byte Method { get; private set; }
-    public class TcpGreetingClientRequestV4
-    {
-        public byte VN { get; set; } = 0x0;
-        public byte CD { get; set; } = 0x1;
-        public ushort DstPort { get; set; } = 0x0;
-        public IPAddress? Address { get; set; } = null;
-        public byte[]? UserId { get; set; } = null;
-        public string hostName { get; set; } = string.Empty;
-        public static TcpGreetingClientRequestV4 Parse(byte[] data)
-        {
-            TcpGreetingClientRequestV4 res = new TcpGreetingClientRequestV4();
-            res.VN = data[0];
-            res.CD = data[1];
-            var portSpan = data.AsSpan(2, sizeof(ushort));
-            portSpan.Reverse();
-            res.DstPort = BitConverter.ToUInt16(portSpan);
-            res.Address = new IPAddress(data.AsSpan(4, 4));
-
-            short startIndex = 8;
-            List<byte> userId = new List<byte>();
-            for(short i = startIndex; data[i] != 0; ++i)
-                userId.Add(data[i]);
-
-            res.UserId = userId.ToArray();
-
-            if (res.Address.ToString().Equals("0.0.0.0"))
-                return res;
-
-            if (!Regex.IsMatch(res.Address.ToString(), @"0.0.0.\d*"))
-                return res;
-
-            res.Address = null;
-            startIndex += (short)(res.UserId.Length + 1);
-            List<byte> host = new List<byte>();
-            for(short i = startIndex; data[i] != 0; ++i)
-                host.Add(data[i]);
-            res.hostName = Encoding.UTF8.GetString(host.ToArray());
-            return res;
-        }
-        public byte[] ToByteArray()
-        {
-            using MemoryStream stream = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(stream);
-            var port = BitConverter.GetBytes(DstPort).AsSpan();
-            port.Reverse();
-            writer.Write(VN);
-            writer.Write(CD);
-            writer.Write(port);
-
-            if(hostName == string.Empty)
-                writer.Write(Address!.GetAddressBytes());
-            else
-                writer.Write(new byte[]{0,0,0,1});
-            if(UserId != null)
-                writer.Write(UserId!);
-            writer.Write((byte)0);
-
-            if (hostName != string.Empty)
-            {
-                writer.Write(Encoding.UTF8.GetBytes(hostName));
-                writer.Write((byte)0);
-            }
-            writer.Flush();
-            return stream.ToArray();
-        }
-    }
-    public class TcpGreetingServerResponceV4
-    {
-        public byte VN { get; set; } = 0x0;
-        public RepTypeV4 CD { get; set; } = RepTypeV4.REQUEST_GRANTED;
-        public ushort DstPort { get; set; } = 0;
-        public IPAddress? Address { get; set; } = null;
-        public static TcpGreetingServerResponceV4 Parse(byte[] data)
-        {
-            var res = new TcpGreetingServerResponceV4();
-            res.VN = data[0];
-            res.CD = (RepTypeV4)data[1];
-            var portSpan = data.AsSpan(2, sizeof(ushort));
-            portSpan.Reverse();
-            res.DstPort = BitConverter.ToUInt16(portSpan);
-            res.Address = new IPAddress(data.AsSpan(4,4));
-            return res;
-        }
-        public byte[] ToByteArray()
-        {
-            using MemoryStream stream = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(stream);
-            var port = BitConverter.GetBytes(DstPort).AsSpan();
-            port.Reverse();
-            writer.Write(VN);
-            writer.Write((byte)CD);
-            writer.Write(port);
-            writer.Write(Address!.GetAddressBytes());
-            writer.Flush();
-            return stream.ToArray();
-        }
-
-    }
+    
     public class TcpGreetingClientRequest
     {
         public byte Ver { get; set; } = 0;
@@ -322,7 +225,6 @@ public partial class SocksContext
             return stream.ToArray();
         }
     }
-
     public class UdpPacket
     {
         public short Rsv { get; set; } = 0;
@@ -402,15 +304,6 @@ public partial class SocksContext
         COMMAND_NOT_SUPPORTED = 0X7,
         ADDRESS_TYPE_NOT_SUPPORTED = 0X8
     }
-
-    public enum RepTypeV4 : byte
-    {
-        REQUEST_GRANTED = 0x5A,
-        REJECT_OR_FILED = 0x5B,
-        REJECT_CONNECT = 0x5C,
-        REGECT_UID = 0x5D
-    };
-
     public class SocksCommandNotSupported : ApplicationException
     {
         public SocksCommandNotSupported() : base("Command not supported") { }

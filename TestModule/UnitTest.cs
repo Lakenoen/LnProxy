@@ -83,57 +83,13 @@ namespace TestModule
         [Fact]
         public async Task SocksBindTest()
         {
-            Proxy server = new Proxy();
-            var task = server.StartAsync();
-
-            TcpClientWrapper client = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
-            SocksContext.TcpGreetingClientRequest request = new SocksContext.TcpGreetingClientRequest()
-            {
-                Ver = 0x5,
-                Size = 0x1,
-                Methods = new byte[] { 0x0 }
-            };
-            await client.WriteAsync(request.ToByteArray());
-
-            byte[] respData = await client.ReadAvailableAsync();
-            var serverResp = SocksModule.SocksContext.TcpGreetingServerResponce.Parse(respData);
-
-            var clientReq = new SocksContext.TcpConnectionClientRequest()
-            {
-                Ver = 0x5,
-                Smd = SocksContext.ConnectType.BIND,
-                Atyp = Atyp.IpV4,
-                DstAddr = IPAddress.Any.GetAddressBytes(),
-                DstPort = 8889
-            };
-            await client.WriteAsync(clientReq.ToByteArray());
-
-            var firstServResp = TcpConnectionServerResponse.Parse( await client.ReadAvailableAsync());
-            TcpClientWrapper endServer = new TcpClientWrapper(new IPEndPoint(new IPAddress(firstServResp.BndAddr), firstServResp.BndPort));
-            var secondServResp = TcpConnectionServerResponse.Parse( await client.ReadAvailableAsync());
-
-            await endServer.WriteAsync(Encoding.UTF8.GetBytes("External server Hello message"));
-            string testResp = Encoding.UTF8.GetString(await client.ReadAvailableAsync());
-            Assert.Equal("External server Hello message", testResp);
-
-            await client.WriteAsync(Encoding.UTF8.GetBytes("Client Hello message"));
-            testResp = Encoding.UTF8.GetString(await endServer.ReadAvailableAsync());
-            Assert.Equal("Client Hello message", testResp);
-
-            server.Dispose();
-        }
-
-        [Fact]
-        public async void ScoksBindV4Test()
-        {
             TcpServer endServer = new TcpServer(IPEndPoint.Parse("0.0.0.0:10000"));
             endServer.StartAsync();
-
             TcpClientWrapper? c = null;
             endServer.OnReaded += (TcpClientWrapper client, byte[] data) =>
             {
                 string addr = Encoding.UTF8.GetString(data);
-                var endPoint = IPEndPoint.Parse (addr);
+                var endPoint = IPEndPoint.Parse(addr);
                 c = new TcpClientWrapper(endPoint);
                 Task.Delay(1).Wait();
             };
@@ -142,34 +98,59 @@ namespace TestModule
             var task = server.StartAsync();
 
             TcpClientWrapper connect = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
-            var connectReq = new TcpGreetingClientRequestV4
+            TcpGreetingClientRequest request = new TcpGreetingClientRequest()
             {
-                VN = 0x0,
-                CD = 0x1,
-                Address = IPAddress.Parse("192.168.0.103"),
+                Ver = 0x5,
+                Size = 0x1,
+                Methods = new byte[] { 0x0 }
+            };
+            await connect.WriteAsync(request.ToByteArray());
+            var serverResp = TcpGreetingServerResponce.Parse(await connect.ReadAvailableAsync());
+
+            var clientConnectReq = new TcpConnectionClientRequest()
+            {
+                Ver = 0x5,
+                Smd = SocksContext.ConnectType.CONNECT,
+                Atyp = Atyp.IpV4,
+                DstAddr = IPAddress.Parse("192.168.0.103").GetAddressBytes(),
                 DstPort = 10000
             };
-            connect.WriteAsync(connectReq.ToByteArray());
-            var connectResp = TcpGreetingServerResponceV4.Parse(await connect.ReadAvailableAsync());
+            await connect.WriteAsync(clientConnectReq.ToByteArray());
+            var connectServResp = TcpConnectionServerResponse.Parse(await connect.ReadAvailableAsync());
 
             TcpClientWrapper bind = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
-            var bindReq = new TcpGreetingClientRequestV4
+            request = new TcpGreetingClientRequest()
             {
-                VN = 0x0,
-                CD = 0x2,
-                Address = IPAddress.Any,
-                DstPort = 0
+                Ver = 0x5,
+                Size = 0x1,
+                Methods = new byte[] { 0x0 }
             };
-            bind.WriteAsync(bindReq.ToByteArray());
-            var bindResp = TcpGreetingServerResponceV4.Parse(await bind.ReadAvailableAsync());
+            await bind.WriteAsync(request.ToByteArray());
+            serverResp = TcpGreetingServerResponce.Parse(await bind.ReadAvailableAsync());
 
-            connect.WriteAsync(Encoding.UTF8.GetBytes($"{bindResp.Address.ToString()}:{bindResp.DstPort.ToString()}"));
+            var clientBindReq = new SocksContext.TcpConnectionClientRequest()
+            {
+                Ver = 0x5,
+                Smd = SocksContext.ConnectType.BIND,
+                Atyp = Atyp.IpV4,
+                DstAddr = IPAddress.Any.GetAddressBytes(),
+                DstPort = 8889
+            };
+            await bind.WriteAsync(clientBindReq.ToByteArray());
+            var bindFirstResp = TcpConnectionServerResponse.Parse( await bind.ReadAvailableAsync());
 
-            bindResp = TcpGreetingServerResponceV4.Parse(await bind.ReadAvailableAsync());
+            connect.WriteAsync(Encoding.UTF8.GetBytes($"{new IPAddress(bindFirstResp.BndAddr).ToString()}:{bindFirstResp.BndPort.ToString()}"));
 
-            c.WriteAsync(Encoding.UTF8.GetBytes("Server to client message"));
-            string finalResp = Encoding.UTF8.GetString(await bind.ReadAvailableAsync());
-            Assert.Equal(finalResp, "Server to client message");
+            var secondBindResp = TcpConnectionServerResponse.Parse( await bind.ReadAvailableAsync());
+            Assert.Equal(secondBindResp.Rep, 0x0);
+
+            await c.WriteAsync(Encoding.UTF8.GetBytes("External server Hello message"));
+            string testResp = Encoding.UTF8.GetString(await bind.ReadAvailableAsync());
+            Assert.Equal("External server Hello message", testResp);
+
+            await bind.WriteAsync(Encoding.UTF8.GetBytes("Client Hello message"));
+            testResp = Encoding.UTF8.GetString(await c.ReadAvailableAsync());
+            Assert.Equal("Client Hello message", testResp);
 
             endServer.Dispose();
             server.Dispose();
