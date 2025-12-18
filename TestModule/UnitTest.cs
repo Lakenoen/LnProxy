@@ -122,5 +122,58 @@ namespace TestModule
 
             server.Dispose();
         }
+
+        [Fact]
+        public async void ScoksBindV4Test()
+        {
+            TcpServer endServer = new TcpServer(IPEndPoint.Parse("0.0.0.0:10000"));
+            endServer.StartAsync();
+
+            TcpClientWrapper? c = null;
+            endServer.OnReaded += (TcpClientWrapper client, byte[] data) =>
+            {
+                string addr = Encoding.UTF8.GetString(data);
+                var endPoint = IPEndPoint.Parse (addr);
+                c = new TcpClientWrapper(endPoint);
+                Task.Delay(1).Wait();
+            };
+
+            Proxy server = new Proxy();
+            var task = server.StartAsync();
+
+            TcpClientWrapper connect = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
+            var connectReq = new TcpGreetingClientRequestV4
+            {
+                VN = 0x0,
+                CD = 0x1,
+                Address = IPAddress.Parse("192.168.0.103"),
+                DstPort = 10000
+            };
+            connect.WriteAsync(connectReq.ToByteArray());
+            var connectResp = TcpGreetingServerResponceV4.Parse(await connect.ReadAvailableAsync());
+
+            TcpClientWrapper bind = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
+            var bindReq = new TcpGreetingClientRequestV4
+            {
+                VN = 0x0,
+                CD = 0x2,
+                Address = IPAddress.Any,
+                DstPort = 0
+            };
+            bind.WriteAsync(bindReq.ToByteArray());
+            var bindResp = TcpGreetingServerResponceV4.Parse(await bind.ReadAvailableAsync());
+
+            connect.WriteAsync(Encoding.UTF8.GetBytes($"{bindResp.Address.ToString()}:{bindResp.DstPort.ToString()}"));
+
+            bindResp = TcpGreetingServerResponceV4.Parse(await bind.ReadAvailableAsync());
+
+            c.WriteAsync(Encoding.UTF8.GetBytes("Server to client message"));
+            string finalResp = Encoding.UTF8.GetString(await bind.ReadAvailableAsync());
+            Assert.Equal(finalResp, "Server to client message");
+
+            endServer.Dispose();
+            server.Dispose();
+        }
+
     }
 }

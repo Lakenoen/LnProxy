@@ -30,12 +30,47 @@ public partial class SocksContext
             iter.Next = new Node(Connection, "Connection");
         }
 
-        private byte[] GreetingV4(byte[] data)
+        private byte[] HandleBindV4(TcpGreetingClientRequestV4 req)
         {
+            Context.BindServerEndPoint = MakeServerEndPoint(req.Address!, req.DstPort);
             var resp = new TcpGreetingServerResponceV4
             {
-
+                VN = req.VN,
+                CD = RepTypeV4.REQUEST_GRANTED,
+                DstPort = (ushort)Context.BindServerEndPoint.Port,
+                Address = Context.BindServerEndPoint.Address
             };
+            Context.ConnectionType = ConnectType.BIND;
+            BindV4?.Invoke(Context, resp);
+            return Array.Empty<byte>();
+        }
+        private byte[] GreetingV4(byte[] data)
+        {
+            var req = TcpGreetingClientRequestV4.Parse(data);
+
+            if (req.CD.Equals(0x2))
+                return HandleBindV4(req);
+
+            var resp = new TcpGreetingServerResponceV4
+            {
+                VN = 0x0,
+                CD = RepTypeV4.REQUEST_GRANTED,
+                DstPort = req.DstPort,
+                Address = IPAddress.Any
+            };
+            Context.TargetPort = resp.DstPort;
+
+            if (req.hostName == string.Empty)
+            {
+                Context.TargetAddress = req.Address!.ToString();
+                Context.TargetType = Atyp.IpV4;
+            }
+            else
+            {
+                Context.TargetAddress = req.hostName;
+                Context.TargetType = Atyp.Domain;
+            }
+
             EndInitV4?.Invoke(Context, resp);
             return Array.Empty<byte>();
         }
@@ -56,7 +91,7 @@ public partial class SocksContext
                     {
                         0x0 => 1,
                         0x2 => 2,
-                        _ => throw new ApplicationException("Method not supported")
+                        _ => throw new SocksMethodNotSupported()
                     };
                     methods.Enqueue(req.Methods[i], priority);
                 }
@@ -69,10 +104,11 @@ public partial class SocksContext
                 var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = methods.Peek() };
                 return resp.ToByteArray();
             }
-            catch (ApplicationException)
+            catch (SocksMethodNotSupported e)
             {
                 Context.Method = 0xff;
-                var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = 0xff };
+                var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = Context.Method };
+                Context.Error = e;
                 return resp.ToByteArray();
             }
         }
@@ -88,12 +124,13 @@ public partial class SocksContext
             PasswordAuthClientRequest req = PasswordAuthClientRequest.Parse(data);
             string username = Encoding.UTF8.GetString(req.Username);
             string password = Encoding.UTF8.GetString(req.Password);
+
             PasswordAuthServerResponce res = new() { Ver = 0x1, Status = 0x0 };
 
-            if (res.Status != 0x0)
+            if (!Context.CheckAuth!(req))
             {
-                CloseClient?.Invoke(Context, res.ToByteArray());
-                return Array.Empty<byte>();
+                Context.Error = new SocksAuthReject();
+                res.Status = 0x1;
             }
 
             return res.ToByteArray();
@@ -101,8 +138,22 @@ public partial class SocksContext
         private byte[] Connection(byte[] data)
         {
             var req = TcpConnectionClientRequest.Parse(data);
+            TcpConnectionServerResponse errorResp = new TcpConnectionServerResponse()
+            {
+                Ver = req.Ver,
+                Atyp = req.Atyp,
+                BndAddr = req.DstAddr,
+                BndPort = req.DstPort,
+            };
             try
             {
+                if (!Context.CheckAddrType!((byte)req.Atyp))
+                    throw new SocksAddrTypeNotSupported();
+                if (!Context.CheckCommandType!((byte)req.Smd))
+                    throw new SocksCommandNotSupported();
+                if (!Context.CheckRule!(req))
+                    throw new SocksConnectionRejectByRule();
+
                 Context.TargetType = req.Atyp;
                 Context.TargetAddress = req.Atyp switch
                 {
@@ -117,21 +168,25 @@ public partial class SocksContext
                     ConnectType.CONNECT => HandleConnect(req),
                     ConnectType.BIND => HandleBind(req),
                     ConnectType.UDP => HandleUdp(req),
-                    _ => throw new ApplicationException("Command not supported")
+                    _ => throw new SocksCommandNotSupported()
                 };
             }
-            catch (ApplicationException e) when (e.Message.Equals("Command not supported"))
+            catch (SocksCommandNotSupported e)
             {
-                TcpConnectionServerResponse response = new TcpConnectionServerResponse()
-                {
-                    Ver = req.Ver,
-                    Rep = (byte)RepType.COMMAND_NOT_SUPPORTED,
-                    Atyp = Context.ServerUdpEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6,
-                    BndAddr = Context.ServerUdpEndPoint.Address.GetAddressBytes(),
-                    BndPort = (ushort)Context.ServerUdpEndPoint.Port,
-                };
-                return response.ToByteArray();
+                errorResp.Rep = (byte)RepType.COMMAND_NOT_SUPPORTED;
+                Context.Error = e;
             }
+            catch (SocksAddrTypeNotSupported e)
+            {
+                errorResp.Rep = (byte)RepType.ADDRESS_TYPE_NOT_SUPPORTED;
+                Context.Error = e;
+            }
+            catch (SocksConnectionRejectByRule e)
+            {
+                errorResp.Rep = (byte)RepType.NOT_ALLOW;
+                Context.Error = e;
+            }
+            return errorResp.ToByteArray();
         }
 
         private byte[] HandleUdp(TcpConnectionClientRequest req)
@@ -149,16 +204,20 @@ public partial class SocksContext
             EndInit?.Invoke(Context, resp);
             return Array.Empty<byte>();
         }
-        private byte[] HandleBind(TcpConnectionClientRequest req)
+
+        private IPEndPoint MakeServerEndPoint(IPAddress addr, ushort port)
         {
-            var ip = new IPAddress(req.DstAddr!);
+            var ip = addr;
             if (ip.Equals(IPAddress.Any))
                 ip = Context.BindServerEndPoint!.Address;
-            var port = req.DstPort;
+            var resultPort = port;
             if (port == 0)
-                port = (ushort)Context.BindServerEndPoint!.Port;
-
-            Context.BindServerEndPoint = new IPEndPoint(ip, port);
+                resultPort = (ushort)Context.BindServerEndPoint!.Port;
+            return new IPEndPoint(ip, resultPort);
+        }
+        private byte[] HandleBind(TcpConnectionClientRequest req)
+        {
+            Context.BindServerEndPoint = MakeServerEndPoint(new IPAddress(req.DstAddr!), req.DstPort);
             var Atyp_ = Context.BindServerEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
             var resp = new TcpConnectionServerResponse()
             {
@@ -238,8 +297,8 @@ public partial class SocksContext
         public delegate byte[] Stage(byte[] data);
         public event Action<SocksContext, TcpGreetingServerResponceV4>? EndInitV4;
         public event Action<SocksContext, TcpConnectionServerResponse>? EndInit;
-        public event Action<SocksContext, byte[]>? CloseClient;
         public event Action<SocksContext, TcpConnectionServerResponse>? Bind;
+        public event Action<SocksContext, TcpGreetingServerResponceV4>? BindV4;
         public event Action<SocksContext, Exception>? OnError;
     }
 

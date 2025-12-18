@@ -10,6 +10,7 @@ using SocksModule;
 using NetworkModule;
 using static SocksModule.SocksContext;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 
 namespace ProxyModule;
 public class Proxy : IDisposable
@@ -122,7 +123,7 @@ public class Proxy : IDisposable
     private async void Server_OnReaded(TcpClientWrapper client, byte[] data)
     {
         if (client.EndPoint == null || !_context.TryGetValue(client.EndPoint, out _))
-            throw new ApplicationException("EndPoint is null");
+            return;
 
         string? firstLine = GetFirstLine(data);
 
@@ -148,17 +149,22 @@ public class Proxy : IDisposable
     {
         _context.TryGetValue(client.EndPoint!, out ProxyClientContext? proxyContext);
 
-        if (proxyContext is null || proxyContext.TcpTunnel is not null)
+        if (proxyContext is null)
             return;
 
         SocksProtocol? protocol = proxyContext.SocksProtocol;
 
         if (protocol is null)
         {
-            var context = new SocksContext() {
+            var context = new SocksContext()
+            {
                 ServerTcpEndPoint = IPEndPoint.Parse("0.0.0.0:0"),
                 BindServerEndPoint = IPEndPoint.Parse("192.168.0.103:8889"),
-                ServerUdpEndPoint = IPEndPoint.Parse("192.168.0.103:8890")
+                ServerUdpEndPoint = IPEndPoint.Parse("192.168.0.103:8890"),
+                CheckAddrType = b => true,
+                CheckRule = req => true,
+                CheckAuth = req => true,
+                CheckCommandType = b => true,
             };
             protocol = proxyContext.SocksProtocol = new SocksProtocol(context);
 
@@ -190,7 +196,7 @@ public class Proxy : IDisposable
                             case ConnectType.CONNECT:
                                 {
                                     var target = await CreateTargetConnection(entry, context.TargetPort);
-                                    CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                                    CreateTunnel(client, target.client, AllowProtocols.SOCKS).StartAsync();
                                 };break;
                             case ConnectType.UDP:
                                 {
@@ -200,24 +206,24 @@ public class Proxy : IDisposable
                         }
                     }
                     await client.WriteAsync(resp.ToByteArray());
+                    return;
                 }
-                catch (Exception ex)
+                catch (SocketException)
+                {
+                    resp.Rep = (byte)SocksContext.RepType.HOST_UNAVAILABLE;
+                }
+                catch (Exception)
                 {
                     resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
-                    await client.WriteAsync(resp.ToByteArray());
-                    this.Server_OnError(ex, client);
                 }
+
+                await client.WriteAsync(resp.ToByteArray());
+                client.Disconnect();
             };
 
             protocol.OnError += (sender, e) =>
             {
                 this.Server_OnError(e, client);
-            };
-
-            protocol.CloseClient += async (SocksContext context, byte[] resp) =>
-            {
-                await client.WriteAsync(resp);
-                client.Disconnect();
             };
 
             protocol.Bind += async (SocksContext context, TcpConnectionServerResponse resp) => 
@@ -235,6 +241,7 @@ public class Proxy : IDisposable
                         resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
                         await client.WriteAsync(resp.ToByteArray());
                         client.Disconnect();
+                        return;
                     }
 
                     await client.WriteAsync(resp.ToByteArray());
@@ -267,11 +274,97 @@ public class Proxy : IDisposable
                     this.Server_OnError(ex, client);
                 }
             };
+
+            protocol.BindV4 += async (SocksContext context, TcpGreetingServerResponceV4 resp) =>
+            {
+                try
+                {
+                    if (context.BindServerEndPoint is null)
+                        throw new ApplicationException("The bind server address is not assigned");
+
+                    context.BindServer = new TcpServer(context.BindServerEndPoint);
+                    Task StartTcpServer = context.BindServer.StartAsync();
+
+                    if (StartTcpServer.Status == TaskStatus.Canceled || StartTcpServer.Status == TaskStatus.Faulted)
+                    {
+                        resp.CD = SocksContext.RepTypeV4.REJECT_OR_FILED;
+                        await client.WriteAsync(resp.ToByteArray());
+                        client.Disconnect();
+                        return;
+                    }
+
+                    await client.WriteAsync(resp.ToByteArray());
+
+                    TcpClientWrapper? connectedClient = null;
+
+                    context.BindServer.OnConnected += externalClinet => connectedClient = externalClinet;
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+
+                    if (connectedClient is null || !connectedClient.CheckConnection())
+                    {
+                        resp.CD = SocksContext.RepTypeV4.REJECT_CONNECT;
+                        await client.WriteAsync(resp.ToByteArray());
+                        client.Disconnect();
+                        return;
+                    }
+
+                    resp.CD = SocksContext.RepTypeV4.REQUEST_GRANTED;
+                    resp.Address = connectedClient!.EndPoint!.Address;
+                    resp.DstPort = (ushort)connectedClient.EndPoint.Port;
+
+                    CreateTunnel(client, connectedClient, AllowProtocols.SOCKS);
+
+                    await client.WriteAsync(resp.ToByteArray());
+                }
+                catch (Exception ex)
+                {
+                    resp.CD = SocksContext.RepTypeV4.REJECT_OR_FILED;
+                    await client.WriteAsync(resp.ToByteArray());
+                    this.Server_OnError(ex, client);
+                }
+            };
+
+            protocol.EndInitV4 += async (SocksContext context, TcpGreetingServerResponceV4 resp) =>
+            {
+                try
+                {
+                    (TcpClientWrapper client, IPEndPoint addr)? target = null;
+                    if (context.TargetType.Equals(SocksContext.Atyp.Domain))
+                    {
+                        var entry = await Dns.GetHostEntryAsync(context.TargetAddress);
+                        target = await CreateTargetConnection(entry, context.TargetPort);
+                        CreateTunnel(client, target.Value.client, AllowProtocols.SOCKS).StartAsync();
+                    }
+                    else
+                    {
+                        IPEndPoint targetEndpoint = IPEndPoint.Parse(context.TargetAddress + ":" + context.TargetPort.ToString());
+                        target = (new TcpClientWrapper(targetEndpoint), targetEndpoint);
+                        CreateTunnel(client, target.Value.client, AllowProtocols.SOCKS).StartAsync();
+                    }
+                    resp.Address = target.Value.addr.Address;
+                    await client.WriteAsync(resp.ToByteArray());
+                    return;
+                }
+                catch (SocketException)
+                {
+                    resp.CD = RepTypeV4.REJECT_CONNECT;
+                }
+                catch (Exception)
+                {
+                    resp.CD = RepTypeV4.REJECT_OR_FILED;
+                }
+
+                await client.WriteAsync(resp.ToByteArray());
+                client.Disconnect();
+            };
         }
 
         var sendData = protocol?.InitAsServer(data);
         if(sendData is not null && sendData.Length > 0) 
             await client.WriteAsync(sendData);
+
+        if(protocol is not null && protocol.Context.Error != null)
+            client.Disconnect();
     }
 
     private IPEndPoint UdpTunnel_OnRecv(SocksContext context,IPEndPoint from, IPEndPoint clientEndPoint, byte[] data)
@@ -295,10 +388,10 @@ public class Proxy : IDisposable
         var entry = await Dns.GetHostEntryAsync(host);
         var target = await CreateTargetConnection(entry, port);
 
-        if (!client.CheckConnection() || target is null)
+        if (!client.CheckConnection() || target.client is null)
             return;
 
-        CreateTunnel(client, target, AllowProtocols.HTTPS).StartAsync();
+        CreateTunnel(client, target.client, AllowProtocols.HTTPS).StartAsync();
 
         var response = new HttpResponce
         {
@@ -321,10 +414,10 @@ public class Proxy : IDisposable
         var entry = await Dns.GetHostEntryAsync(req.Uri!.Host);
         var target = await CreateTargetConnection(entry, 80);
 
-        if (!client.CheckConnection() || target is null)
+        if (!client.CheckConnection() || target.client is null)
             return;
 
-        CreateTunnel(client, target, AllowProtocols.HTTP).StartAsync();
+        CreateTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
     }
     private void Server_OnConnected(TcpClientWrapper client)
     {
@@ -389,9 +482,9 @@ public class Proxy : IDisposable
 
         return newTunnel;
     }
-    private async Task<TcpClientWrapper> CreateTargetConnection(IPHostEntry entry, int port)
+    private async Task<(TcpClientWrapper client, IPEndPoint addr)> CreateTargetConnection(IPHostEntry entry, int port)
     {
-        ConcurrentQueue<TcpClientWrapper> connected = new ConcurrentQueue<TcpClientWrapper>();
+        var connected = new ConcurrentQueue<(TcpClientWrapper client, IPEndPoint addr)>();
         using var cts = new CancellationTokenSource();
         await Parallel.ForEachAsync(entry.AddressList, async (IPAddress addr, CancellationToken token) =>
         {
@@ -406,7 +499,7 @@ public class Proxy : IDisposable
                 if (res.CheckConnection())
                 {
                     cts.Cancel();
-                    connected.Enqueue(res);
+                    connected.Enqueue((res, enpoint));
                 }
             }
             catch (OperationCanceledException)
@@ -425,7 +518,6 @@ public class Proxy : IDisposable
     {
         using MemoryStream stream = new MemoryStream(data);
         using StreamReader reader = new StreamReader(stream);
-
         return reader.ReadLine();
     }
 
