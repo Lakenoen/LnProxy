@@ -267,6 +267,12 @@ public class Proxy : IDisposable
 
                     await client.WriteAsync(resp.ToByteArray());
                 }
+                catch (SocketException)
+                {
+                    resp.Rep = (byte)SocksContext.RepType.HOST_UNAVAILABLE;
+                    await client.WriteAsync(resp.ToByteArray());
+                    client.Disconnect();
+                }
                 catch (Exception ex)
                 {
                     resp.Rep = (byte)SocksContext.RepType.PROXY_ERROR;
