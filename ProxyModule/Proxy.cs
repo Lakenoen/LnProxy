@@ -11,6 +11,7 @@ using NetworkModule;
 using static SocksModule.SocksContext;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
+using System.IO;
 
 namespace ProxyModule;
 public class Proxy : IDisposable
@@ -20,13 +21,14 @@ public class Proxy : IDisposable
     private readonly TcpServer server;
     public Proxy()
     {
-        server = new TcpServer(IPEndPoint.Parse("0.0.0.0:20000"));
+        server = new TcpServer(IPEndPoint.Parse("0.0.0.0:443"));
         server.OnConnected += Server_OnConnected;
         server.OnReaded += Server_OnReaded;
         server.OnClientDisconnect += Server_OnClientDisconnect;
         server.OnError += Server_OnError;
 
-        _proxyCert = LoadProxyCert();
+        //TODO
+        _proxyCert = X509CertificateLoader.LoadPkcs12FromFile("../../../../../socks.pfx", "Pass1");
     }
 
     public async Task StartAsync()
@@ -125,7 +127,8 @@ public class Proxy : IDisposable
     }
     private async void Server_OnReaded(TcpClientWrapper client, byte[] data)
     {
-        if (client.EndPoint == null || !_context.TryGetValue(client.EndPoint, out _))
+        ProxyClientContext? context;
+        if (client.EndPoint == null || !_context.TryGetValue(client.EndPoint, out context))
             return;
 
         string? firstLine = GetFirstLine(data);
@@ -140,7 +143,11 @@ public class Proxy : IDisposable
             else if (firstLine.Contains("HTTP/"))
                 await HandleHttp(client, data);
             else
+            {
+                if (context.TcpTunnel is not null || context.UdpTunnel is not null)
+                    return;
                 await HandleSocks(client, data);
+            }
         }
         catch (Exception ex)
         {
@@ -183,7 +190,7 @@ public class Proxy : IDisposable
                         {
                             case ConnectType.CONNECT: {
                                     var target = new TcpClientWrapper(targetEndpoint);
-                                    CreateTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
+                                    CreateTcpTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
                                 };break;
                             case ConnectType.UDP:
                                 {
@@ -199,7 +206,7 @@ public class Proxy : IDisposable
                             case ConnectType.CONNECT:
                                 {
                                     var target = await CreateTargetConnection(entry, context.TargetPort);
-                                    CreateTunnel(client, target.client, AllowProtocols.SOCKS).StartAsync();
+                                    CreateTcpTunnel(client, target.client, AllowProtocols.SOCKS).StartAsync();
                                 };break;
                             case ConnectType.UDP:
                                 {
@@ -266,7 +273,7 @@ public class Proxy : IDisposable
                     resp.BndAddr = connectedClient!.EndPoint!.Address.GetAddressBytes();
                     resp.BndPort = (ushort)connectedClient.EndPoint.Port;
 
-                    CreateTunnel(client, connectedClient, AllowProtocols.SOCKS);
+                    CreateTcpTunnel(client, connectedClient, AllowProtocols.SOCKS);
 
                     await client.WriteAsync(resp.ToByteArray());
                 }
@@ -317,7 +324,7 @@ public class Proxy : IDisposable
         if (!client.CheckConnection() || target.client is null)
             return;
 
-        CreateTunnel(client, target.client, AllowProtocols.HTTPS).StartAsync();
+        CreateTcpTunnel(client, target.client, AllowProtocols.HTTPS).StartAsync();
 
         var response = new HttpResponce
         {
@@ -343,7 +350,7 @@ public class Proxy : IDisposable
         if (!client.CheckConnection() || target.client is null)
             return;
 
-        CreateTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
+        CreateTcpTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
     }
     private void Server_OnConnected(TcpClientWrapper client)
     {
@@ -352,31 +359,13 @@ public class Proxy : IDisposable
 
         _context.TryAdd(client.EndPoint, new ProxyClientContext());
 
-        //Task.Factory.StartNew(() =>
-        //{
-        //    client.Locker.Enter();
-        //    try
-        //    {
-        //        SslStream sslStream = new SslStream(client.Stream, false);
-        //        sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: true);
-        //        client.Stream = sslStream;
-        //    }
-        //    finally { client.Locker.Exit(); }
-        //    ;
-        //});
+
+        //TODO
+        //SslStream sslStream = new SslStream(client.Stream, false);
+        //sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: true);
+        //client.Stream = sslStream;
 
     }
-    private X509Certificate2 LoadProxyCert()
-    {
-        return new X509Certificate2(
-            File.ReadAllBytes("../../../../../socks.pfx"),
-            "Pass1",
-            X509KeyStorageFlags.MachineKeySet |
-            X509KeyStorageFlags.PersistKeySet |
-            X509KeyStorageFlags.Exportable
-        );
-    }
-
     public void Dispose()
     {
         this.StopAsync().Wait();
@@ -406,7 +395,7 @@ public class Proxy : IDisposable
         proxyContext.UdpTunnel.OnRecv += (from, data) => UdpTunnel_OnRecv(context, from, sourceEndPoint, data);
         return proxyContext.UdpTunnel;
     }
-    private TcpTunnel CreateTunnel(TcpClientWrapper source, TcpClientWrapper target, AllowProtocols protocol)
+    private TcpTunnel CreateTcpTunnel(TcpClientWrapper source, TcpClientWrapper target, AllowProtocols protocol)
     {
         if (source.EndPoint is null)
             throw new ArgumentNullException(nameof(source.EndPoint));

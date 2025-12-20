@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 namespace NetworkModule;
 public class TcpClientWrapper : IDisposable
 {
-    public Lock Locker { get; private set; } = new Lock();
     public byte[] Buffer { get; } = new byte[0xffff];
     private readonly TcpClient _client;
     private Stream _stream;
@@ -58,45 +57,40 @@ public class TcpClientWrapper : IDisposable
     }
     public async Task<byte[]> ReadAvailableAsync(CancellationToken? cancel = null)
     {
-        Locker.Enter();
+        int readed = 0;
         try
         {
-            int readed = 0;
-            try
-            {
-                if (!CheckConnection())
-                {
-                    OnDisconnect?.Invoke(this);
-                    return Array.Empty<byte>();
-                }
-
-                readed = (cancel == null) ? await _stream.ReadAsync(Buffer)
-                    : await _stream.ReadAsync(Buffer, cancel.Value);
-                if (readed == 0)
-                {
-                    OnDisconnect?.Invoke(this);
-                    return Array.Empty<byte>();
-                }
-            }
-            catch (OperationCanceledException)
-            {
-
-            }
-            catch (ObjectDisposedException)
+            if (!CheckConnection())
             {
                 OnDisconnect?.Invoke(this);
                 return Array.Empty<byte>();
             }
-            catch (IOException)
+
+            readed = (cancel == null) ? await _stream.ReadAsync(Buffer)
+                : await _stream.ReadAsync(Buffer, cancel.Value);
+            if (readed == 0)
             {
                 OnDisconnect?.Invoke(this);
                 return Array.Empty<byte>();
             }
-            var data = Buffer.AsMemory(0, readed).ToArray();
-            OnReaded?.Invoke(data);
-            return data;
         }
-        finally { Locker.Exit(); }
+        catch (OperationCanceledException)
+        {
+            
+        }
+        catch (ObjectDisposedException)
+        {
+            OnDisconnect?.Invoke(this);
+            return Array.Empty<byte>();
+        }
+        catch (IOException)
+        {
+            OnDisconnect?.Invoke(this);
+            return Array.Empty<byte>();
+        }
+        var data = Buffer.AsMemory(0, readed).ToArray();
+        OnReaded?.Invoke(data);
+        return data;
     }
 
     public async Task WriteAsync(byte[] data, CancellationToken? cancel = null)
