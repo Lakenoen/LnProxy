@@ -10,4 +10,6 @@ public class ProxySettings : ISettings
     public string ProxyCrtPath => "../../../../../socks.pfx";
 
     public string ProxyCrtPasswd => "Pass1";
+
+    public bool IsTlsProxy => false;
 }

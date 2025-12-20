@@ -398,10 +398,12 @@ public class Proxy : IDisposable
         _context.TryAdd(client.EndPoint, new ProxyClientContext());
 
 
-        //TODO
-        //SslStream sslStream = new SslStream(client.Stream, false);
-        //sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: true);
-        //client.Stream = sslStream;
+        if (_settings.IsTlsProxy)
+        {
+            SslStream sslStream = new SslStream(client.Stream, false);
+            sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: true);
+            client.Stream = sslStream;
+        }
 
     }
     public void Dispose()
