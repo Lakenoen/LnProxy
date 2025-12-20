@@ -16,29 +16,33 @@ using System.IO;
 namespace ProxyModule;
 public class Proxy : IDisposable
 {
+    private static int _defaultHttpPort = 80;
     private X509Certificate2 _proxyCert { get; init; }
     private ConcurrentDictionary<IPEndPoint, ProxyClientContext> _context = new();
-    private readonly TcpServer server;
-    public Proxy()
+    private readonly TcpServer _server;
+    private readonly ISettings _settings;
+    public Proxy(ISettings settings)
     {
-        server = new TcpServer(IPEndPoint.Parse("0.0.0.0:443"));
-        server.OnConnected += Server_OnConnected;
-        server.OnReaded += Server_OnReaded;
-        server.OnClientDisconnect += Server_OnClientDisconnect;
-        server.OnError += Server_OnError;
+        _settings = settings;
+
+        _server = new TcpServer(IPEndPoint.Parse("0.0.0.0:443"));
+        _server.OnConnected += Server_OnConnected;
+        _server.OnReaded += Server_OnReaded;
+        _server.OnClientDisconnect += Server_OnClientDisconnect;
+        _server.OnError += Server_OnError;
 
         //TODO
-        _proxyCert = X509CertificateLoader.LoadPkcs12FromFile("../../../../../socks.pfx", "Pass1");
+        _proxyCert = X509CertificateLoader.LoadPkcs12FromFile(_settings.ProxyCrtPath, _settings.ProxyCrtPasswd);
     }
 
     public async Task StartAsync()
     {
-        await server.StartAsync();
+        await _server.StartAsync();
     }
 
     public async Task StopAsync()
     {
-        await server.StopAsync();
+        await _server.StopAsync();
     }
 
     private async void Server_OnError(Exception ex, TcpClientWrapper? client)
@@ -218,6 +222,10 @@ public class Proxy : IDisposable
                     await client.WriteAsync(resp.ToByteArray());
                     return;
                 }
+                catch (ApplicationException ex) when (ex.Message.Equals("Could not connect or find IP address"))
+                {
+                    resp.Rep = (byte)SocksContext.RepType.NETWORK_UNAVAILABLE;
+                }
                 catch (SocketException)
                 {
                     resp.Rep = (byte)SocksContext.RepType.HOST_UNAVAILABLE;
@@ -277,6 +285,12 @@ public class Proxy : IDisposable
 
                     await client.WriteAsync(resp.ToByteArray());
                 }
+                catch (ApplicationException ex) when (ex.Message.Equals("Could not connect or find IP address"))
+                {
+                    resp.Rep = (byte)SocksContext.RepType.NETWORK_UNAVAILABLE;
+                    await client.WriteAsync(resp.ToByteArray());
+                    client.Disconnect();
+                }
                 catch (SocketException)
                 {
                     resp.Rep = (byte)SocksContext.RepType.HOST_UNAVAILABLE;
@@ -313,44 +327,68 @@ public class Proxy : IDisposable
 
     private async Task HandleHttps(TcpClientWrapper client, byte[] data)
     {
-        HttpRequest req = HttpRequest.ParseHeader(data);
-        var host_port = req.Headers["Host"].Split(":");
-        var host = host_port[0];
-        var port = int.Parse(host_port[1]);
-
-        var entry = await Dns.GetHostEntryAsync(host);
-        var target = await CreateTargetConnection(entry, port);
-
-        if (!client.CheckConnection() || target.client is null)
-            return;
-
-        CreateTcpTunnel(client, target.client, AllowProtocols.HTTPS).StartAsync();
-
-        var response = new HttpResponce
+        try
         {
-            Status = 200,
-            Msg = "Connection Established",
-            Headers =
-                {
-                    {"Connection","close"},
-                    {"Cache-Control","no-cache, no-store, must-revalidate"},
-                    {"Pragma","no-cache"},
-                    {"Expires","0"}
-                }
-        };
-        await client.WriteAsync(response.ToByteArray());
+            HttpRequest req = HttpRequest.ParseHeader(data);
+            var host_port = req.Headers["Host"].Split(":");
+            var host = host_port[0];
+            var port = int.Parse(host_port[1]);
+
+            var entry = await Dns.GetHostEntryAsync(host);
+            var target = await CreateTargetConnection(entry, port);
+
+            if (!client.CheckConnection() || target.client is null)
+                return;
+
+            CreateTcpTunnel(client, target.client, AllowProtocols.HTTPS).StartAsync();
+
+            await client.WriteAsync(HttpServerResponses.Connected.ToByteArray());
+        }
+        catch (SocketException)
+        {
+            await client.WriteAsync(HttpServerResponses.GatewayTimeout.ToByteArray());
+            throw;
+        }
+        catch (ApplicationException ex) when (ex.Message.Equals("Could not connect or find IP address"))
+        {
+            await client.WriteAsync(HttpServerResponses.BadGateway.ToByteArray());
+            throw;
+        }
+        catch
+        {
+            await client.WriteAsync(HttpServerResponses.InternalError.ToByteArray());
+            throw;
+        }
     }
 
     private async Task HandleHttp(TcpClientWrapper client, byte[] data)
     {
-        var req = HttpRequest.Parse(data);
-        var entry = await Dns.GetHostEntryAsync(req.Uri!.Host);
-        var target = await CreateTargetConnection(entry, 80);
+        try
+        {
+            var req = HttpRequest.Parse(data);
+            var entry = await Dns.GetHostEntryAsync(req.Uri!.Host);
+            var target = await CreateTargetConnection(entry, _defaultHttpPort);
 
-        if (!client.CheckConnection() || target.client is null)
-            return;
+            if (!client.CheckConnection() || target.client is null)
+                return;
 
-        CreateTcpTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
+            CreateTcpTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
+        }
+        catch (SocketException)
+        {
+            await client.WriteAsync(HttpServerResponses.GatewayTimeout.ToByteArray());
+            throw;
+        }
+        catch (ApplicationException ex) when (ex.Message.Equals("Could not connect or find IP address"))
+        {
+            await client.WriteAsync(HttpServerResponses.BadGateway.ToByteArray());
+            throw;
+        }
+        catch
+        {
+            await client.WriteAsync(HttpServerResponses.InternalError.ToByteArray());
+            throw;
+        }
     }
     private void Server_OnConnected(TcpClientWrapper client)
     {
@@ -385,7 +423,7 @@ public class Proxy : IDisposable
             item.Value.UdpTunnel?.Dispose();
         }
 
-        server.Dispose();
+        _server.Dispose();
     }
     private UdpTunnel CreateUdpTunnel(IPEndPoint sourceEndPoint, ProxyClientContext proxyContext)
     {

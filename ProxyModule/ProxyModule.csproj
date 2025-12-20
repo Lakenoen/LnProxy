@@ -7,6 +7,5 @@
   </PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\NetworkModule\NetworkModule.csproj" />
-		<ProjectReference Include="..\SocksModule\SocksModule.csproj" />
 	</ItemGroup>
 </Project>
