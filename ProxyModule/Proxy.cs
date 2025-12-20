@@ -15,15 +15,18 @@ using System.Text.RegularExpressions;
 namespace ProxyModule;
 public class Proxy : IDisposable
 {
+    private X509Certificate2 _proxyCert { get; init; }
     private ConcurrentDictionary<IPEndPoint, ProxyClientContext> _context = new();
     private readonly TcpServer server;
     public Proxy()
     {
-        server = new TcpServer(IPEndPoint.Parse("0.0.0.0:8888"));
+        server = new TcpServer(IPEndPoint.Parse("0.0.0.0:20000"));
         server.OnConnected += Server_OnConnected;
         server.OnReaded += Server_OnReaded;
         server.OnClientDisconnect += Server_OnClientDisconnect;
         server.OnError += Server_OnError;
+
+        _proxyCert = LoadProxyCert();
     }
 
     public async Task StartAsync()
@@ -348,7 +351,32 @@ public class Proxy : IDisposable
             return;
 
         _context.TryAdd(client.EndPoint, new ProxyClientContext());
+
+        //Task.Factory.StartNew(() =>
+        //{
+        //    client.Locker.Enter();
+        //    try
+        //    {
+        //        SslStream sslStream = new SslStream(client.Stream, false);
+        //        sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: true);
+        //        client.Stream = sslStream;
+        //    }
+        //    finally { client.Locker.Exit(); }
+        //    ;
+        //});
+
     }
+    private X509Certificate2 LoadProxyCert()
+    {
+        return new X509Certificate2(
+            File.ReadAllBytes("../../../../../socks.pfx"),
+            "Pass1",
+            X509KeyStorageFlags.MachineKeySet |
+            X509KeyStorageFlags.PersistKeySet |
+            X509KeyStorageFlags.Exportable
+        );
+    }
+
     public void Dispose()
     {
         this.StopAsync().Wait();
