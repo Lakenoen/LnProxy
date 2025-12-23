@@ -31,8 +31,12 @@ public class Proxy : IDisposable
         _server.OnClientDisconnect += Server_OnClientDisconnect;
         _server.OnError += Server_OnError;
 
-        //TODO
-        _proxyCert = X509CertificateLoader.LoadPkcs12FromFile(_settings.ProxyCrtPath, _settings.ProxyCrtPasswd);
+        _proxyCert = X509CertificateLoader.LoadPkcs12FromFile(
+            _settings.ProxyCrtPath,
+            _settings.ProxyCrtPasswd,
+            X509KeyStorageFlags.MachineKeySet |
+            X509KeyStorageFlags.PersistKeySet |
+            X509KeyStorageFlags.Exportable);
     }
 
     public async Task StartAsync()
@@ -392,19 +396,25 @@ public class Proxy : IDisposable
     }
     private void Server_OnConnected(TcpClientWrapper client)
     {
-        if (client.EndPoint is null)
-            return;
-
-        _context.TryAdd(client.EndPoint, new ProxyClientContext());
-
-
-        if (_settings.IsTlsProxy)
+        try
         {
-            SslStream sslStream = new SslStream(client.Stream, false);
-            sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: true);
-            client.Stream = sslStream;
-        }
+            if (client.EndPoint is null)
+                return;
 
+            _context.TryAdd(client.EndPoint, new ProxyClientContext());
+
+
+            if (_settings.IsTlsProxy)
+            {
+                SslStream sslStream = new SslStream(client.Stream, false);
+                sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: false);
+                client.Stream = sslStream;
+            }
+        }
+        catch
+        {
+            this.Server_OnClientDisconnect(client);
+        }
     }
     public void Dispose()
     {

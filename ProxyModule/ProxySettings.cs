@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 namespace ProxyModule;
 public class ProxySettings : ISettings
 {
-    public string ProxyCrtPath => "../../../../../socks.pfx";
+    public string ProxyCrtPath => "../../../../../proxy.pfx";
 
-    public string ProxyCrtPasswd => "Pass1";
+    public string ProxyCrtPasswd => "pass1";
 
-    public bool IsTlsProxy => false;
+    public bool IsTlsProxy => true;
 }
