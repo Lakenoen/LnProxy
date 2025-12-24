@@ -147,14 +147,14 @@ public class Proxy : IDisposable
         try
         {
             if (firstLine.StartsWith("CONNECT"))
-                await HandleHttps(client, data);
+                await HandleHttps(client, context, data);
             else if (firstLine.Contains("HTTP/"))
-                await HandleHttp(client, data);
+                await HandleHttp(client, context, data);
             else
             {
                 if (context.TcpTunnel is not null || context.UdpTunnel is not null)
                     return;
-                await HandleSocks(client, data);
+                await HandleSocks(client, context, data);
             }
         }
         catch (Exception ex)
@@ -163,13 +163,8 @@ public class Proxy : IDisposable
         }
     }
 
-    private async Task HandleSocks(TcpClientWrapper client, byte[] data)
+    private async Task HandleSocks(TcpClientWrapper client, ProxyClientContext proxyContext, byte[] data)
     {
-        _context.TryGetValue(client.EndPoint!, out ProxyClientContext? proxyContext);
-
-        if (proxyContext is null)
-            return;
-
         SocksProtocol? protocol = proxyContext.SocksProtocol;
 
         if (protocol is null)
@@ -329,11 +324,40 @@ public class Proxy : IDisposable
         return clientEndPoint;
     }
 
-    private async Task HandleHttps(TcpClientWrapper client, byte[] data)
+    private async Task<bool> HttpAuth(
+        TcpClientWrapper client,
+        HttpRequest req,
+        ProxyClientContext proxyContext)
+    {
+        if (!this._settings.AuthEnable)
+            return true;
+
+        if (proxyContext.Auth is null)
+        {
+            proxyContext.Auth = new Digest();
+            var authResp = proxyContext.Auth.Next(req);
+            string s = authResp.ToString();
+            await client.WriteAsync(authResp!.ToByteArray());
+            return false;
+        }
+        else if (!proxyContext.Auth.IsEnd())
+        {
+            var authResp = proxyContext.Auth.Next(req);
+            await client.WriteAsync(authResp!.ToByteArray());
+            return false;
+        }
+        return true;
+    }
+    private async Task HandleHttps(TcpClientWrapper client, ProxyClientContext context, byte[] data)
     {
         try
         {
             HttpRequest req = HttpRequest.ParseHeader(data);
+
+            bool isContinue = await HttpAuth(client, req, context!);
+            if (!isContinue)
+                return;
+
             var host_port = req.Headers["Host"].Split(":");
             var host = host_port[0];
             var port = int.Parse(host_port[1]);
@@ -365,7 +389,7 @@ public class Proxy : IDisposable
         }
     }
 
-    private async Task HandleHttp(TcpClientWrapper client, byte[] data)
+    private async Task HandleHttp(TcpClientWrapper client, ProxyClientContext context, byte[] data)
     {
         try
         {
@@ -523,6 +547,7 @@ public class Proxy : IDisposable
         public TcpTunnel? TcpTunnel { get; set; } = null;
         public UdpTunnel? UdpTunnel { get; set; } = null;
         public SocksProtocol? SocksProtocol { get; set; } = null;
+        public Digest? Auth = null;
     }
 
 }

@@ -54,4 +54,15 @@ static class HttpServerResponses
             {"X-Proxy-Error", "Connection timeout"}
         }
     };
+
+    public static HttpResponce Authentication { get; } = new HttpResponce
+    {
+        Status = 407,
+        Msg = "Proxy Authentication Required",
+        Headers =
+        {
+            {"Proxy-Connection", "keep-alive"},
+            {"Content-Length", "0"}
+        }
+    };
 }

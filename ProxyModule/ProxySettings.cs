@@ -11,5 +11,6 @@ public class ProxySettings : ISettings
 
     public string ProxyCrtPasswd => "pass1";
 
-    public bool IsTlsProxy => true;
+    public bool IsTlsProxy => false;
+    public bool AuthEnable => true;
 }

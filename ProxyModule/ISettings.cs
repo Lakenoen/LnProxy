@@ -10,4 +10,5 @@ public interface ISettings
     public string ProxyCrtPath { get; }
     public string ProxyCrtPasswd { get; }
     public bool IsTlsProxy { get; }
+    public bool AuthEnable { get; }
 }
