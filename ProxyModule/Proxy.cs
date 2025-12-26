@@ -12,6 +12,7 @@ using static SocksModule.SocksContext;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using System.IO;
+using System.Security.Authentication;
 
 namespace ProxyModule;
 public class Proxy : IDisposable
@@ -37,8 +38,38 @@ public class Proxy : IDisposable
             X509KeyStorageFlags.MachineKeySet |
             X509KeyStorageFlags.PersistKeySet |
             X509KeyStorageFlags.Exportable);
+        checkProxyCA();
     }
 
+    private bool checkProxyCA()
+    {
+        if (!_proxyCert.Verify())
+        {
+            return false;
+        }
+        if (!_proxyCert.HasPrivateKey)
+        {
+            Console.WriteLine("Сертификат не имеет приватного ключа!");
+        }
+
+        Console.WriteLine($"HasPrivateKey: {_proxyCert.HasPrivateKey}");
+        Console.WriteLine($"PrivateKey: {_proxyCert.PrivateKey}");
+        Console.WriteLine($"GetRSAPrivateKey(): {_proxyCert.GetRSAPrivateKey() != null}");
+
+
+        var san = _proxyCert.Extensions
+            .OfType<X509SubjectAlternativeNameExtension>()
+            .FirstOrDefault();
+
+        if (san != null)
+        {
+            foreach (var name in san.EnumerateDnsNames())
+                Console.WriteLine($"SAN DNS: {name}");
+            foreach (var ip in san.EnumerateIPAddresses())
+                Console.WriteLine($"SAN IP: {ip}");
+        }
+        return true;
+    }
     public async Task StartAsync()
     {
         await _server.StartAsync();
@@ -334,17 +365,15 @@ public class Proxy : IDisposable
 
         if (proxyContext.Auth is null)
         {
-            proxyContext.Auth = new Digest();
-            var authResp = proxyContext.Auth.Next(req);
-            string s = authResp.ToString();
+            proxyContext.Auth = new Digest(_settings.GetPassword);
+            var authResp = proxyContext.Auth.Next(req) as HttpResponce;
+            string s = authResp!.ToString();
             await client.WriteAsync(authResp!.ToByteArray());
             return false;
         }
         else if (!proxyContext.Auth.IsEnd())
         {
-            var authResp = proxyContext.Auth.Next(req);
-            await client.WriteAsync(authResp!.ToByteArray());
-            return false;
+            return proxyContext.Auth.Next(req) as Ref<bool>;
         }
         return true;
     }
@@ -358,7 +387,7 @@ public class Proxy : IDisposable
             if (!isContinue)
                 return;
 
-            var host_port = req.Headers["Host"].Split(":");
+            var host_port = req.Uri.AbsoluteUri.Split(":");
             var host = host_port[0];
             var port = int.Parse(host_port[1]);
 
@@ -430,10 +459,35 @@ public class Proxy : IDisposable
 
             if (_settings.IsTlsProxy)
             {
-                SslStream sslStream = new SslStream(client.Stream, false);
-                sslStream.AuthenticateAsServer(_proxyCert, clientCertificateRequired: false, checkCertificateRevocation: false);
+                SslStream sslStream = new SslStream(
+                    client.Stream,
+                    leaveInnerStreamOpen: false,
+                    userCertificateValidationCallback: null,
+                    userCertificateSelectionCallback: null
+                );
+
+                var sslOptions = new SslServerAuthenticationOptions
+                {
+                    ServerCertificate = _proxyCert,
+                    ClientCertificateRequired = false,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 | SslProtocols.Tls11 | SslProtocols.Ssl2 | SslProtocols.Ssl3,
+
+                    ApplicationProtocols = new List<SslApplicationProtocol>
+                    {
+                        SslApplicationProtocol.Http11,
+                        SslApplicationProtocol.Http2
+                    },
+
+                    EncryptionPolicy = EncryptionPolicy.RequireEncryption
+                };
+
+                sslStream.AuthenticateAsServer(sslOptions);
                 client.Stream = sslStream;
             }
+        }
+        catch (AuthenticationException ex)
+        {
+            var win32Ex = ex.InnerException as System.ComponentModel.Win32Exception;
         }
         catch
         {

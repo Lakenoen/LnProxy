@@ -8,9 +8,11 @@ namespace ProxyModule;
 public class ProxySettings : ISettings
 {
     public string ProxyCrtPath => "../../../../../proxy.pfx";
-
     public string ProxyCrtPasswd => "pass1";
-
-    public bool IsTlsProxy => false;
+    public bool IsTlsProxy => true;
     public bool AuthEnable => true;
+    public string? GetPassword(string userName)
+    {
+        return "pass";
+    }
 }

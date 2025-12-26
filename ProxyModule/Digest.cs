@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -10,20 +11,57 @@ namespace ProxyModule
     {
         public string Nonce { get; private set; } = string.Empty;
         public string Opaque { get; init; } = Convert.ToBase64String(Encoding.UTF8.GetBytes("LnProxySession"));
-        private Stack<Func<HttpRequest, HttpResponce>> stack = new();
-        public Digest()
+        public string Realm { get; init; } = "LnProxy";
+        private Stack<Func<HttpRequest, object>> stack = new();
+        private Func<string, string?> _getPasswd;
+        public Digest(Func<string, string?> getPasswd)
         {
+            this.Nonce = MakeNonce();
+            this._getPasswd = getPasswd;
+            stack.Push(CheckValid);
             stack.Push(InitAuth);
         }
         private HttpResponce InitAuth(HttpRequest req)
         {
-            this.Nonce = MakeNonce();
-
             var res = HttpServerResponses.Authentication;
-            res.Headers.Add("Proxy-Authenticate", $"Digest realm=\"LnProxy\", nonce=\"{this.Nonce}\", opaque=\"{Opaque}\", qop=\"auth\", algorithm=SHA-256");
+            if (req.Headers.ContainsKey("Proxy-Authorization"))
+                res.Headers["stale"] = "true";
+            
+            res.Headers.Add("Proxy-Authenticate", $"Digest realm=\"{Realm}\", nonce=\"{this.Nonce}\", opaque=\"{Opaque}\", qop=\"auth\", algorithm=SHA-256");
             return res;
         }
 
+        private Dictionary<string,string> ParseDigestHeader(HttpRequest req)
+        {
+            var res = new Dictionary<string,string>();
+            string[] pairs = req.Headers["Proxy-Authorization"].Split(",");
+            foreach(var pair in pairs)
+            {
+                string[] keyValue = pair.Replace("\"", "").Split("=", 2);
+                res.Add(keyValue[0].Replace("Digest ","").Replace(" ", "").ToLower(), keyValue[1].Replace(" ",""));
+            }
+            return res;
+        }
+        private Ref<bool> CheckValid(HttpRequest req)
+        {
+            var parameters = ParseDigestHeader(req);
+            string? pass = _getPasswd(parameters["username"]);
+            string ha1 = getHashSha256(parameters["username"] + ":" + Realm + ":" + pass);
+            string ha2 = getHashSha256(req.Method.ToString() + ":" + req.Uri.AbsoluteUri.ToString());
+            string reconstructHash = getHashSha256(ha1 + this.Nonce + ":" + parameters["nc"] + ":" + parameters["cnonce"] + ":auth:" + ha2);
+
+            return reconstructHash.Equals(parameters["response"]) ? true : false;
+        }
+        private static string getHashSha256(string text)
+        {
+            byte[] bytes = Encoding.Unicode.GetBytes(text);
+            using var hash = SHA256.Create();
+            byte[] hashed = hash.ComputeHash(bytes);
+            var sb = new StringBuilder();
+            foreach (byte b in hashed)
+                sb.Append(b.ToString("x2"));
+            return sb.ToString();
+        }
         private string MakeNonce()
         {
             string timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
@@ -37,7 +75,7 @@ namespace ProxyModule
         {
             return stack.Count == 0;
         }
-        public HttpResponce? Next(HttpRequest req)
+        public object? Next(HttpRequest req)
         {
             if (IsEnd())
                 return null;

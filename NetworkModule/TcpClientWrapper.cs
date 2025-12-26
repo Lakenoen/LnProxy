@@ -3,12 +3,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using static NetworkModule.TcpServer;
 
 namespace NetworkModule;
 public class TcpClientWrapper : IDisposable
 {
+    private readonly SemaphoreSlim _readSemaphore = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _writeSemaphore = new SemaphoreSlim(1, 1);
     public byte[] Buffer { get; } = new byte[0xffff];
     private readonly TcpClient _client;
     private Stream _stream;
@@ -58,6 +63,19 @@ public class TcpClientWrapper : IDisposable
     public async Task<byte[]> ReadAvailableAsync(CancellationToken? cancel = null)
     {
         int readed = 0;
+        Func<Task<int>>? read = null;
+
+        if (cancel is not null)
+        {
+            await _readSemaphore.WaitAsync(cancel.Value);
+            read = async () => await _stream.ReadAsync(Buffer, cancel.Value);
+        }
+        else
+        {
+            await _readSemaphore.WaitAsync();
+            read = async () => await _stream.ReadAsync(Buffer);
+        }
+
         try
         {
             if (!CheckConnection())
@@ -66,17 +84,21 @@ public class TcpClientWrapper : IDisposable
                 return Array.Empty<byte>();
             }
 
-            readed = (cancel == null) ? await _stream.ReadAsync(Buffer)
-                : await _stream.ReadAsync(Buffer, cancel.Value);
+            readed = await read.Invoke();
+
             if (readed == 0)
             {
                 OnDisconnect?.Invoke(this);
                 return Array.Empty<byte>();
             }
+
+            return GetReaded(readed);
+
         }
         catch (OperationCanceledException)
         {
-            
+            if(readed != 0)
+                return GetReaded(readed);
         }
         catch (ObjectDisposedException)
         {
@@ -88,13 +110,33 @@ public class TcpClientWrapper : IDisposable
             OnDisconnect?.Invoke(this);
             return Array.Empty<byte>();
         }
+        finally
+        {
+            _readSemaphore.Release();
+        }
+
+        return Array.Empty<byte>();
+    }
+    private byte[] GetReaded(int readed)
+    {
         var data = Buffer.AsMemory(0, readed).ToArray();
         OnReaded?.Invoke(data);
         return data;
     }
-
     public async Task WriteAsync(byte[] data, CancellationToken? cancel = null)
     {
+        Func<Task>? write = null;
+        if (cancel is not null)
+        {
+            await _writeSemaphore.WaitAsync(cancel.Value);
+            write = async () => await _stream.WriteAsync(data, 0, data.Length, (CancellationToken)cancel);
+        }
+        else
+        {
+            await _writeSemaphore.WaitAsync();
+            write = async () => await _stream.WriteAsync(data, 0, data.Length);
+        }
+
         try
         {
             if (!CheckConnection())
@@ -102,10 +144,9 @@ public class TcpClientWrapper : IDisposable
                 OnDisconnect?.Invoke(this);
                 return;
             }
-            if(cancel == null)
-                await _stream.WriteAsync(data, 0, data.Length);
-            else
-                await _stream.WriteAsync(data, 0, data.Length, (CancellationToken)cancel);
+
+            await write.Invoke();
+
             _stream.Flush();
         }
         catch (OperationCanceledException)
@@ -119,6 +160,10 @@ public class TcpClientWrapper : IDisposable
         catch (IOException)
         {
             OnDisconnect?.Invoke(this);
+        }
+        finally
+        {
+            _writeSemaphore.Release();
         }
     }
 

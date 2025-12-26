@@ -13,7 +13,7 @@ static class HttpServerResponses
         Msg = "Connection Established",
         Headers =
                 {
-                    {"Connection","close"},
+                    {"Connection","keep-alive"},
                     {"Cache-Control","no-cache, no-store, must-revalidate"},
                     {"Pragma","no-cache"},
                     {"Expires","0"}
