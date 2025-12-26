@@ -363,19 +363,27 @@ public class Proxy : IDisposable
         if (!this._settings.AuthEnable)
             return true;
 
-        if (proxyContext.Auth is null)
+        try
         {
-            proxyContext.Auth = new Digest(_settings.GetPassword);
-            var authResp = proxyContext.Auth.Next(req) as HttpResponce;
-            string s = authResp!.ToString();
-            await client.WriteAsync(authResp!.ToByteArray());
-            return false;
+            if (proxyContext.Auth is null)
+            {
+                proxyContext.Auth = new DigestAuth(_settings.GetPassword);
+                var authResp = proxyContext.Auth.Next(req) as HttpResponce;
+                string s = authResp!.ToString();
+                await client.WriteAsync(authResp!.ToByteArray());
+                return false;
+            }
+            else if (!proxyContext.Auth.IsEnd())
+            {
+                return proxyContext.Auth.Next(req) as Ref<bool>;
+            }
+            return true;
         }
-        else if (!proxyContext.Auth.IsEnd())
+        catch
         {
-            return proxyContext.Auth.Next(req) as Ref<bool>;
+            await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
         }
-        return true;
+        return false;
     }
     private async Task HandleHttps(TcpClientWrapper client, ProxyClientContext context, byte[] data)
     {
@@ -601,7 +609,7 @@ public class Proxy : IDisposable
         public TcpTunnel? TcpTunnel { get; set; } = null;
         public UdpTunnel? UdpTunnel { get; set; } = null;
         public SocksProtocol? SocksProtocol { get; set; } = null;
-        public Digest? Auth = null;
+        public DigestAuth? Auth = null;
     }
 
 }

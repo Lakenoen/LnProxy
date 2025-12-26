@@ -12,12 +12,12 @@ static class HttpServerResponses
         Status = 200,
         Msg = "Connection Established",
         Headers =
-                {
-                    {"Connection","keep-alive"},
-                    {"Cache-Control","no-cache, no-store, must-revalidate"},
-                    {"Pragma","no-cache"},
-                    {"Expires","0"}
-                }
+        {
+            {"Connection","keep-alive"},
+            {"Cache-Control","no-cache, no-store, must-revalidate"},
+            {"Pragma","no-cache"},
+            {"Expires","0"}
+        }
     };
 
     public static HttpResponce InternalError { get; } = new HttpResponce
@@ -26,6 +26,7 @@ static class HttpServerResponses
         Msg = "Internal Server Error",
         Headers =
         {
+            {"Date", $"{DateTime.UtcNow.ToString()}" },
             {"Connection","close"},
             {"Proxy-Agent", "LnProxy" },
             {"X-Proxy-Error", "Proxy error"}
@@ -38,6 +39,7 @@ static class HttpServerResponses
         Msg = "Bad Gateway",
         Headers =
         {
+            {"Date", $"{DateTime.UtcNow.ToString()}" },
             {"Connection","close"},
             {"Proxy-Agent", "LnProxy" },
             {"X-Proxy-Error", "DNS resolution failed"}
@@ -49,6 +51,7 @@ static class HttpServerResponses
         Msg = "Gateway Timeout",
         Headers =
         {
+            {"Date", $"{DateTime.UtcNow.ToString()}" },
             {"Connection","close"},
             {"Proxy-Agent", "LnProxy" },
             {"X-Proxy-Error", "Connection timeout"}
@@ -61,8 +64,19 @@ static class HttpServerResponses
         Msg = "Proxy Authentication Required",
         Headers =
         {
+            {"Date", $"{DateTime.UtcNow.ToString()}" },
             {"Proxy-Connection", "keep-alive"},
             {"Content-Length", "0"}
+        }
+    };
+
+    public static HttpResponce Forbidden { get; } = new HttpResponce
+    {
+        Status = 403,
+        Msg = "Forbidden",
+        Headers =
+        {
+            {"Date", $"{DateTime.UtcNow.ToString()}" }
         }
     };
 }

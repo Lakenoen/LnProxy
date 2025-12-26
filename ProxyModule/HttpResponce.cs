@@ -9,7 +9,7 @@ using static ProxyModule.HttpRequest;
 using static ProxyModule.IHttpPacket;
 
 namespace ProxyModule;
-public class HttpResponce : IHttpPacket
+public class HttpResponce : IHttpPacket, ICloneable
 {
     public IHttpPacket.Protocols Protocol { get; set; } = IHttpPacket.Protocols.HTTP;
     public float Ver { get; set; } = 1.1f;
@@ -87,4 +87,13 @@ public class HttpResponce : IHttpPacket
         return res;
     }
 
+    public object Clone()
+    {
+        return new HttpResponce
+        {
+            Status = this.Status,
+            Msg = this.Msg,
+            Headers = new Dictionary<string,string>(this.Headers),
+        };
+    }
 }

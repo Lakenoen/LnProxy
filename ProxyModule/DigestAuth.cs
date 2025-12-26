@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 
 namespace ProxyModule
 {
-    internal class Digest
+    internal class DigestAuth
     {
         public string Nonce { get; private set; } = string.Empty;
         public string Opaque { get; init; } = Convert.ToBase64String(Encoding.UTF8.GetBytes("LnProxySession"));
         public string Realm { get; init; } = "LnProxy";
         private Stack<Func<HttpRequest, object>> stack = new();
         private Func<string, string?> _getPasswd;
-        public Digest(Func<string, string?> getPasswd)
+        public DigestAuth(Func<string, string?> getPasswd)
         {
             this.Nonce = MakeNonce();
             this._getPasswd = getPasswd;
@@ -23,11 +23,11 @@ namespace ProxyModule
         }
         private HttpResponce InitAuth(HttpRequest req)
         {
-            var res = HttpServerResponses.Authentication;
+            var res = HttpServerResponses.Authentication.Clone() as HttpResponce;
             if (req.Headers.ContainsKey("Proxy-Authorization"))
-                res.Headers["stale"] = "true";
+                res!.Headers["stale"] = "true";
             
-            res.Headers.Add("Proxy-Authenticate", $"Digest realm=\"{Realm}\", nonce=\"{this.Nonce}\", opaque=\"{Opaque}\", qop=\"auth\", algorithm=SHA-256");
+            res!.Headers.Add("Proxy-Authenticate", $"Digest realm=\"{Realm}\", nonce=\"{this.Nonce}\", opaque=\"{Opaque}\", qop=\"auth\", algorithm=SHA-256");
             return res;
         }
 
@@ -45,16 +45,20 @@ namespace ProxyModule
         private Ref<bool> CheckValid(HttpRequest req)
         {
             var parameters = ParseDigestHeader(req);
+
+            if(this.Nonce != parameters["nonce"] || this.Realm != parameters["realm"] || this.Opaque != parameters["opaque"])
+                return false;
+
             string? pass = _getPasswd(parameters["username"]);
-            string ha1 = getHashSha256(parameters["username"] + ":" + Realm + ":" + pass);
-            string ha2 = getHashSha256(req.Method.ToString() + ":" + req.Uri.AbsoluteUri.ToString());
-            string reconstructHash = getHashSha256(ha1 + this.Nonce + ":" + parameters["nc"] + ":" + parameters["cnonce"] + ":auth:" + ha2);
+            string ha1 = getHashSha256($"{parameters["username"]}:{Realm}:{pass}");
+            string ha2 = getHashSha256($"{req.Method}:{req.Uri!.AbsoluteUri}");
+            string reconstructHash = getHashSha256($"{ha1}:{this.Nonce}:{parameters["nc"]}:{parameters["cnonce"]}:auth:{ha2}");
 
             return reconstructHash.Equals(parameters["response"]) ? true : false;
         }
         private static string getHashSha256(string text)
         {
-            byte[] bytes = Encoding.Unicode.GetBytes(text);
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
             using var hash = SHA256.Create();
             byte[] hashed = hash.ComputeHash(bytes);
             var sb = new StringBuilder();
