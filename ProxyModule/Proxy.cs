@@ -13,6 +13,7 @@ using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using System.IO;
 using System.Security.Authentication;
+using System.Data;
 
 namespace ProxyModule;
 public class Proxy : IDisposable
@@ -202,13 +203,42 @@ public class Proxy : IDisposable
         {
             var context = new SocksContext()
             {
-                ServerTcpEndPoint = IPEndPoint.Parse("0.0.0.0:0"),
-                BindServerEndPoint = IPEndPoint.Parse("192.168.0.103:8889"),
-                ServerUdpEndPoint = IPEndPoint.Parse("192.168.0.103:8890"),
-                CheckAddrType = b => true,
-                CheckRule = req => true,
-                CheckAuth = req => true,
-                CheckCommandType = b => true,
+                ServerTcpEndPoint = _settings.SocksExternalTcpEndPoint,
+                BindServerEndPoint = _settings.SocksExternalBindEndPoint,
+                ServerUdpEndPoint = _settings.SocksExternalUdpEndPoint,
+                CheckAddrType = b =>
+                {
+                    Atyp type = (Atyp)b;
+                    return _settings.CheckAllowAddrType(type.ToString());
+                },
+                CheckRule = req => {
+                    return _settings.CheckRule(new ISettings.RuleInfo
+                    {
+                        TargetAddr = (req.Atyp.Equals(Atyp.Domain)) ? Encoding.UTF8.GetString(req.DstAddr) : new IPAddress(req.DstAddr).ToString(),
+                        SourceAddr = client.EndPoint.Address.ToString(),
+                        SourcePort = client.EndPoint.Port.ToString(),
+                        TargetPort = req.DstPort.ToString(),
+                        Proto = "socks5",
+                        Username = (_settings.AuthEnable && proxyContext.Username != null) ? proxyContext.Username : string.Empty!
+                    });
+                },
+                CheckAuth = req =>
+                {
+                    string un = Encoding.UTF8.GetString(req.Username);
+                    string? pass = null;
+                    if( (pass = _settings.GetPassword(un)) != null 
+                    && pass.Equals(Encoding.UTF8.GetString(req.Password)))
+                    {
+                        proxyContext.Username = un;
+                        return true;
+                    }
+                    return false;
+                },
+                CheckCommandType = b =>
+                {
+                    ConnectType type = (ConnectType)b;
+                    return _settings.SocksCheckAllowCommand(type);
+                }
             };
             protocol = proxyContext.SocksProtocol = new SocksProtocol(context);
 
@@ -367,7 +397,7 @@ public class Proxy : IDisposable
         {
             if (proxyContext.Auth is null)
             {
-                proxyContext.Auth = new DigestAuth(_settings.GetPassword);
+                proxyContext.Auth = new DigestAuth(_settings.GetPassword, proxyContext);
                 var authResp = proxyContext.Auth.Next(req) as HttpResponce;
                 string s = authResp!.ToString();
                 await client.WriteAsync(authResp!.ToByteArray());
@@ -582,6 +612,10 @@ public class Proxy : IDisposable
             {
                 return;
             }
+            catch
+            {
+                return;
+            }
         });
 
         if(connected.TryPeek(out var res))
@@ -604,12 +638,13 @@ public class Proxy : IDisposable
         SOCKS,
     }
 
-    private class ProxyClientContext()
+    internal class ProxyClientContext()
     {
         public TcpTunnel? TcpTunnel { get; set; } = null;
         public UdpTunnel? UdpTunnel { get; set; } = null;
         public SocksProtocol? SocksProtocol { get; set; } = null;
-        public DigestAuth? Auth = null;
+        public DigestAuth? Auth { get; set; } = null;
+        public string? Username { get; set; } = null;
     }
 
 }

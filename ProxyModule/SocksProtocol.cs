@@ -109,7 +109,7 @@ public partial class SocksContext
                 Context.TargetType = req.Atyp;
                 Context.TargetAddress = req.Atyp switch
                 {
-                    SocksContext.Atyp.Domain => Encoding.UTF8.GetString(req.DstAddr.ToArray()),
+                    SocksContext.Atyp.Domain => Encoding.UTF8.GetString(req.DstAddr),
                     _ => new IPAddress(req.DstAddr).ToString()
                 };
 

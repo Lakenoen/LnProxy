@@ -14,8 +14,10 @@ namespace ProxyModule
         public string Realm { get; init; } = "LnProxy";
         private Stack<Func<HttpRequest, object>> stack = new();
         private Func<string, string?> _getPasswd;
-        public DigestAuth(Func<string, string?> getPasswd)
+        private readonly Proxy.ProxyClientContext _context;
+        public DigestAuth(Func<string, string?> getPasswd, Proxy.ProxyClientContext context)
         {
+            this._context = context;
             this.Nonce = MakeNonce();
             this._getPasswd = getPasswd;
             stack.Push(CheckValid);
@@ -54,7 +56,12 @@ namespace ProxyModule
             string ha2 = getHashSha256($"{req.Method}:{req.Uri!.AbsoluteUri}");
             string reconstructHash = getHashSha256($"{ha1}:{this.Nonce}:{parameters["nc"]}:{parameters["cnonce"]}:auth:{ha2}");
 
-            return reconstructHash.Equals(parameters["response"]) ? true : false;
+            if (reconstructHash.Equals(parameters["response"]))
+            {
+                _context.Username = parameters["username"];
+                return true;
+            }
+            return false;   
         }
         private static string getHashSha256(string text)
         {
