@@ -1,0 +1,4 @@
+﻿# | RULE | SOURCE ADDRESS | SOURCE PORT | TARGET ADDRESS | TARGET PORT | PROTO | CONNECT TYPE | USERNAME |
+Allow w* w* w* w* w* w* w*
+#Deny w* w* www.google.com w* socks connect w*
+#Deny 192\.168\.0\.d* w* www.reddit.com w* socks connect w*

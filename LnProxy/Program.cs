@@ -6,7 +6,34 @@ using SocksModule;
 using NetworkModule;
 using static SocksModule.SocksContext;
 
-Proxy server = new Proxy(new ProxySettings("settings.txt"));
-var task = server.StartAsync();
-task.Wait();
-server.Dispose();
+public class Progrma
+{
+    private static async Task DebugEntryPoint()
+    {
+        var settings = new ProxySettings("Settings.txt");
+        Proxy server = new Proxy(settings);
+        settings.Changed += () =>
+        {
+            server.Dispose();
+        };
+        await server.StartAsync();
+        do
+        {
+            server = new Proxy(settings);
+            await server.StartAsync();
+        } while (true);
+    }
+
+    private static void ReleaseEntryPoint(string[] args)
+    {
+
+    }
+    public static void Main(string[] args)
+    {
+#if DEBUG
+        DebugEntryPoint().Wait();
+#else
+        ReleaseEntryPoint(args);
+#endif
+    }
+}

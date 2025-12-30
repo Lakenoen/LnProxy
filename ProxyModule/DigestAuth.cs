@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using NetworkModule;
 
 namespace ProxyModule
 {
@@ -15,8 +18,16 @@ namespace ProxyModule
         private Stack<Func<HttpRequest, object>> stack = new();
         private Func<string, string?> _getPasswd;
         private readonly Proxy.ProxyClientContext _context;
-        public DigestAuth(Func<string, string?> getPasswd, Proxy.ProxyClientContext context)
+        private readonly Proxy _parentProxy;
+        private readonly TcpClientWrapper _client;
+        public DigestAuth(
+            Func<string, string?> getPasswd,
+            Proxy.ProxyClientContext context,
+            Proxy proxy,
+            TcpClientWrapper client)
         {
+            this._client = client;
+            this._parentProxy = proxy;
             this._context = context;
             this.Nonce = MakeNonce();
             this._getPasswd = getPasswd;
@@ -58,6 +69,8 @@ namespace ProxyModule
 
             if (reconstructHash.Equals(parameters["response"]))
             {
+                if (!_parentProxy.AddUserConnectionIfNeeded(parameters["username"], _client))
+                    return false;
                 _context.Username = parameters["username"];
                 return true;
             }

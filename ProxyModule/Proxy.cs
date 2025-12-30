@@ -14,15 +14,21 @@ using System.Text.RegularExpressions;
 using System.IO;
 using System.Security.Authentication;
 using System.Data;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
+using Serilog.Formatting.Json;
+using System.Net.Mail;
 
 namespace ProxyModule;
 public class Proxy : IDisposable
 {
-    private static int _defaultHttpPort = 80;
-    private X509Certificate2 _proxyCert { get; init; }
+    private X509Certificate2? _proxyCert { get; init; }
     private ConcurrentDictionary<IPEndPoint, ProxyClientContext> _context = new();
+    private ConcurrentDictionary<string, HashSet<IPAddress>> _users = new();
     private readonly TcpServer _server;
     private readonly ISettings _settings;
+    private readonly Logger _logger;
     public Proxy(ISettings settings)
     {
         _settings = settings;
@@ -33,15 +39,65 @@ public class Proxy : IDisposable
         _server.OnClientDisconnect += Server_OnClientDisconnect;
         _server.OnError += Server_OnError;
 
-        _proxyCert = X509CertificateLoader.LoadPkcs12FromFile(
-            _settings.ProxyCrtPath,
-            _settings.ProxyCrtPasswd,
-            X509KeyStorageFlags.MachineKeySet |
-            X509KeyStorageFlags.PersistKeySet |
-            X509KeyStorageFlags.Exportable);
-        checkProxyCA();
-    }
+        _logger = _settings.Logger!;
 
+        if (_settings.IsTlsProxy)
+        {
+            _proxyCert = X509CertificateLoader.LoadPkcs12FromFile(
+                _settings.ProxyCrtPath,
+                _settings.ProxyCrtPasswd,
+                X509KeyStorageFlags.MachineKeySet |
+                X509KeyStorageFlags.PersistKeySet |
+                X509KeyStorageFlags.Exportable);
+            checkProxyCA();
+        }
+    }
+    internal void RemoveUserConnection(string username, TcpClientWrapper client)
+    {
+        try
+        {
+            if (_users.TryGetValue(username, out HashSet<IPAddress>? users))
+            {
+                if (users.Count == 0)
+                {
+                    _users.Remove(username, out _);
+                    return;
+                }
+                users.Remove(client.EndPoint!.Address);
+            }
+        }
+        catch
+        {
+            _users.Remove(username, out _);
+        }
+    }
+    internal bool AddUserConnectionIfNeeded(string username, TcpClientWrapper client)
+    {
+        try
+        {
+            if (_users.TryGetValue(username, out HashSet<IPAddress>? users))
+            {
+                if (users.Count >= _settings.MaxUserConnection)
+                    return false;
+                users.Add(client.EndPoint!.Address);
+            }
+            else
+            {
+                var userConnections = new HashSet<IPAddress>();
+                userConnections.Add(client.EndPoint!.Address);
+                _users.TryAdd(username, userConnections);
+            }
+
+            _logger.Error("Authorization success client: {@Client} username: {@User}"
+                , client!.EndPoint!.ToString()
+                , username);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
     private bool checkProxyCA()
     {
         if (!_proxyCert.Verify())
@@ -73,11 +129,13 @@ public class Proxy : IDisposable
     }
     public async Task StartAsync()
     {
+        _logger.Information("Starting proxy server {@Address}", _server.EndPoint.ToString());
         await _server.StartAsync();
     }
 
     public async Task StopAsync()
     {
+        _logger.Information("Stopping proxy server {@Address}", _server.EndPoint.ToString());
         await _server.StopAsync();
     }
 
@@ -90,6 +148,11 @@ public class Proxy : IDisposable
 
             if (_context!.Remove(client.EndPoint, out var context))
             {
+                _logger.Error("{@Msg} client: {@Client} username: {@User}"
+                , ex.Message
+                , client!.EndPoint!.ToString()
+                , context.Username);
+
                 var TcpTask = context.TcpTunnel?.StopAsync();
                 var UdpTask = context.UdpTunnel?.StopAsync();
 
@@ -102,9 +165,12 @@ public class Proxy : IDisposable
                 context.SocksProtocol?.Context?.BindServer?.Dispose();
                 context.TcpTunnel?.Dispose();
                 context.UdpTunnel?.Dispose();
+
+                if (context.Username != null)
+                    RemoveUserConnection(context.Username, client);
             }
         }
-        catch (Exception)
+        catch
         {
             return;
         }
@@ -118,6 +184,11 @@ public class Proxy : IDisposable
 
             if (_context!.Remove(tunnel.Source.EndPoint, out var context))
             {
+                _logger.Error("{@Msg} client: {@Client} username: {@User}"
+                , ex.Message
+                , tunnel.Source.EndPoint.ToString()
+                , context.Username);
+
                 var TcpTask = context.TcpTunnel?.StopAsync();
                 var UdpTask = context.UdpTunnel?.StopAsync();
 
@@ -130,9 +201,12 @@ public class Proxy : IDisposable
                 context.SocksProtocol?.Context?.BindServer?.Dispose();
                 context.TcpTunnel?.Dispose();
                 context.UdpTunnel?.Dispose();
+
+                if (context.Username != null)
+                    RemoveUserConnection(context.Username, tunnel.Source);
             }
         }
-        catch (Exception)
+        catch
         {
             return;
         }
@@ -146,6 +220,10 @@ public class Proxy : IDisposable
 
             if (_context!.Remove(client.EndPoint, out var context))
             {
+                _logger.Information("Disconnect client: {@Client} username: {@User}"
+                , client.EndPoint.ToString()
+                , context.Username);
+
                 var TcpTask = context.TcpTunnel?.StopAsync();
                 var UdpTask = context.UdpTunnel?.StopAsync();
 
@@ -158,9 +236,12 @@ public class Proxy : IDisposable
                 context.SocksProtocol?.Context?.BindServer?.Dispose();
                 context.TcpTunnel?.Dispose();
                 context.UdpTunnel?.Dispose();
+
+                if (context.Username != null)
+                    RemoveUserConnection(context.Username, client);
             }
         }
-        catch (Exception)
+        catch
         {
             return;
         }
@@ -212,26 +293,41 @@ public class Proxy : IDisposable
                     return _settings.CheckAllowAddrType(type.ToString());
                 },
                 CheckRule = req => {
-                    return _settings.CheckRule(new ISettings.RuleInfo
+                    return _settings.CheckRule(new RuleManager.RuleInfo
                     {
-                        TargetAddr = (req.Atyp.Equals(Atyp.Domain)) ? Encoding.UTF8.GetString(req.DstAddr) : new IPAddress(req.DstAddr).ToString(),
-                        SourceAddr = client.EndPoint.Address.ToString(),
-                        SourcePort = client.EndPoint.Port.ToString(),
+                        Target = (req.Atyp.Equals(Atyp.Domain)) ? Encoding.UTF8.GetString(req.DstAddr) : new IPAddress(req.DstAddr).ToString(),
+                        Source = client.EndPoint.Address.ToString(),
+                        SourcePort = client.EndPoint.Port.ToString(), 
                         TargetPort = req.DstPort.ToString(),
                         Proto = "socks5",
-                        Username = (_settings.AuthEnable && proxyContext.Username != null) ? proxyContext.Username : string.Empty!
+                        Username = (_settings.AuthEnable && proxyContext.Username != null) ? proxyContext.Username : string.Empty!,
+                        Command = req.Smd.ToString()
                     });
                 },
                 CheckAuth = req =>
                 {
+                    if (!_settings.AuthEnable)
+                        return true;
+
                     string un = Encoding.UTF8.GetString(req.Username);
                     string? pass = null;
                     if( (pass = _settings.GetPassword(un)) != null 
                     && pass.Equals(Encoding.UTF8.GetString(req.Password)))
                     {
+                        if (!AddUserConnectionIfNeeded(un, client))
+                        {
+                            _logger.Information("Authorization failed client: {@Client} username: {@User}"
+                                , client.EndPoint!.ToString()
+                                , proxyContext.Username);
+                            return false;
+                        }
+
                         proxyContext.Username = un;
                         return true;
                     }
+                    _logger.Information("Authorization failed client: {@Client} username: {@User}"
+                                , client.EndPoint!.ToString()
+                                , proxyContext.Username);
                     return false;
                 },
                 CheckCommandType = b =>
@@ -255,11 +351,23 @@ public class Proxy : IDisposable
                             case ConnectType.CONNECT: {
                                     var target = new TcpClientWrapper(targetEndpoint);
                                     CreateTcpTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
-                                };break;
+
+                                    _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                                        , client.EndPoint!.ToString()
+                                        , proxyContext.Username
+                                        , target.EndPoint!.ToString());
+                                }
+                                ;break;
                             case ConnectType.UDP:
                                 {
                                     CreateUdpTunnel(targetEndpoint, proxyContext).StartAsync();
-                                };break;
+
+                                    _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                                        , client.EndPoint!.ToString()
+                                        , proxyContext.Username
+                                        , targetEndpoint.ToString());
+                                }
+                                ;break;
                         }
                     }
                     else if (context.TargetType.Equals(SocksContext.Atyp.Domain))
@@ -271,13 +379,20 @@ public class Proxy : IDisposable
                                 {
                                     var target = await CreateTargetConnection(entry, context.TargetPort);
                                     CreateTcpTunnel(client, target.client, AllowProtocols.SOCKS).StartAsync();
-                                };break;
+                                }
+                                ;break;
                             case ConnectType.UDP:
                                 {
                                     IPEndPoint sourceUdpEndPoint = new IPEndPoint(entry.AddressList.First(), context.TargetPort);
                                     CreateUdpTunnel(sourceUdpEndPoint, proxyContext).StartAsync();
-                                };break;
+                                }
+                                ;break;
                         }
+
+                        _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                                        , client.EndPoint!.ToString()
+                                        , proxyContext.Username
+                                        , context.TargetAddress);
                     }
                     await client.WriteAsync(resp.ToByteArray());
                     return;
@@ -344,6 +459,11 @@ public class Proxy : IDisposable
                     CreateTcpTunnel(client, connectedClient, AllowProtocols.SOCKS);
 
                     await client.WriteAsync(resp.ToByteArray());
+
+                    _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                                        , client.EndPoint!.ToString()
+                                        , proxyContext.Username
+                                        , connectedClient.EndPoint!.ToString());
                 }
                 catch (ApplicationException ex) when (ex.Message.Equals("Could not connect or find IP address"))
                 {
@@ -397,7 +517,7 @@ public class Proxy : IDisposable
         {
             if (proxyContext.Auth is null)
             {
-                proxyContext.Auth = new DigestAuth(_settings.GetPassword, proxyContext);
+                proxyContext.Auth = new DigestAuth(_settings.GetPassword, proxyContext, this, client);
                 var authResp = proxyContext.Auth.Next(req) as HttpResponce;
                 string s = authResp!.ToString();
                 await client.WriteAsync(authResp!.ToByteArray());
@@ -413,6 +533,10 @@ public class Proxy : IDisposable
         {
             await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
         }
+        await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
+        _logger.Information("Authorization failed client: {@Client} username: {@User}"
+                                , client.EndPoint!.ToString()
+                                , proxyContext.Username);
         return false;
     }
     private async Task HandleHttps(TcpClientWrapper client, ProxyClientContext context, byte[] data)
@@ -432,12 +556,38 @@ public class Proxy : IDisposable
             var entry = await Dns.GetHostEntryAsync(host);
             var target = await CreateTargetConnection(entry, port);
 
+            bool IsRuleAccess = _settings.CheckRule(new RuleManager.RuleInfo
+            {
+                Target = host,
+                Source = client.EndPoint!.Address.ToString(),
+                SourcePort = client.EndPoint.Port.ToString(),
+                TargetPort = port.ToString(),
+                Proto = "https",
+                Username = (_settings.AuthEnable && context.Username != null) ? context.Username : string.Empty!,
+                Command = "connect"
+            });
+
+            if (!IsRuleAccess)
+            {
+                await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
+                _logger.Information("Reject by rule: {@Client} username: {@User} to {@Server} Protocol: HTTPS"
+                                        , client.EndPoint!.ToString()
+                                        , context.Username
+                                        , target.client.EndPoint!.ToString());
+                return;
+            }
+
             if (!client.CheckConnection() || target.client is null)
                 return;
 
             CreateTcpTunnel(client, target.client, AllowProtocols.HTTPS).StartAsync();
 
             await client.WriteAsync(HttpServerResponses.Connected.ToByteArray());
+
+            _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: HTTPS"
+                                        , client.EndPoint!.ToString()
+                                        , context.Username
+                                        , target.client.EndPoint!.ToString());
         }
         catch (SocketException)
         {
@@ -461,13 +611,44 @@ public class Proxy : IDisposable
         try
         {
             var req = HttpRequest.Parse(data);
+
+            bool isContinue = await HttpAuth(client, req, context!);
+            if (!isContinue)
+                return;
+
             var entry = await Dns.GetHostEntryAsync(req.Uri!.Host);
-            var target = await CreateTargetConnection(entry, _defaultHttpPort);
+            var target = await CreateTargetConnection(entry, _settings.DefaultHttpPort);
+
+            bool IsRuleAccess = _settings.CheckRule(new RuleManager.RuleInfo
+            {
+                Target = req.Uri!.Host,
+                Source = client.EndPoint!.Address.ToString(),
+                SourcePort = client.EndPoint.Port.ToString(),
+                TargetPort = target.client.EndPoint!.Port.ToString(),
+                Proto = "https",
+                Username = (_settings.AuthEnable && context.Username != null) ? context.Username : string.Empty!,
+                Command = "connect"
+            });
+
+            if (!IsRuleAccess)
+            {
+                await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
+                _logger.Information("Reject by rule: {@Client} username: {@User} to {@Server} Protocol: HTTP"
+                                        , client.EndPoint!.ToString()
+                                        , context.Username
+                                        , target.client.EndPoint!.ToString());
+                return;
+            }
 
             if (!client.CheckConnection() || target.client is null)
                 return;
 
             CreateTcpTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
+
+            _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: HTTP"
+                                        , client.EndPoint!.ToString()
+                                        , context.Username
+                                        , target.client.EndPoint!.ToString());
         }
         catch (SocketException)
         {
@@ -494,6 +675,7 @@ public class Proxy : IDisposable
 
             _context.TryAdd(client.EndPoint, new ProxyClientContext());
 
+            _logger.Information("Try connection to proxy: client: {@Client}", client.EndPoint!.ToString());
 
             if (_settings.IsTlsProxy)
             {
@@ -525,7 +707,8 @@ public class Proxy : IDisposable
         }
         catch (AuthenticationException ex)
         {
-            var win32Ex = ex.InnerException as System.ComponentModel.Win32Exception;
+            _logger.Error("Ssl Error {@Msg} client: {@Client}", ex.Message, client.EndPoint!.ToString());
+            this.Server_OnClientDisconnect(client);
         }
         catch
         {
@@ -551,6 +734,7 @@ public class Proxy : IDisposable
             item.Value.UdpTunnel?.Dispose();
         }
 
+        _logger.Dispose();
         _server.Dispose();
     }
     private UdpTunnel CreateUdpTunnel(IPEndPoint sourceEndPoint, ProxyClientContext proxyContext)

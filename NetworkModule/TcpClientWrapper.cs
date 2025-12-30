@@ -18,12 +18,10 @@ public class TcpClientWrapper : IDisposable
     private readonly TcpClient _client;
     private Stream _stream;
     public Stream Stream { get => _stream; set => _stream = value; }
-    public IPEndPoint? EndPoint
-    {
-        get => _client?.Client?.RemoteEndPoint as IPEndPoint;
-    }
+    public IPEndPoint? EndPoint { get; init; }
     public TcpClientWrapper(TcpClient client)
     {
+        EndPoint = client.Client.RemoteEndPoint as IPEndPoint;
         _client = client;
         _stream = client.GetStream();
     }
@@ -32,6 +30,7 @@ public class TcpClientWrapper : IDisposable
     {
         _client = new TcpClient();
         _client.Connect(ip);
+        EndPoint = _client.Client.RemoteEndPoint as IPEndPoint;
         _stream = _client.GetStream();
     }
 
