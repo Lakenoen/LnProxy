@@ -100,8 +100,9 @@ public class ProxySettings : ISettings
                 case "AuthPath": _pathToAuthFile = keyValue[1].Trim(); break;
             }
         }
+        Directory.CreateDirectory("log");
         this._logger = new LoggerConfiguration()
-            .WriteTo.File("Log.txt", rollingInterval: RollingInterval.Day, encoding: Encoding.UTF8)
+            .WriteTo.File("log/Log.txt", rollingInterval: RollingInterval.Day, encoding: Encoding.UTF8)
             .CreateLogger();
         Verefy();
         try
@@ -113,6 +114,7 @@ public class ProxySettings : ISettings
         {
             throw new SettingsException("Rule parse error");
         }
+        _logger.Information("Settings loaded");
     }
 
     private void Verefy()

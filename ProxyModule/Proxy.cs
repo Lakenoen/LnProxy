@@ -49,7 +49,9 @@ public class Proxy : IDisposable
                 X509KeyStorageFlags.MachineKeySet |
                 X509KeyStorageFlags.PersistKeySet |
                 X509KeyStorageFlags.Exportable);
-            checkProxyCA();
+
+            if (!checkProxyCA())
+                _logger.Error("Invalid proxy certificate");
         }
     }
     internal void RemoveUserConnection(string username, TcpClientWrapper client)
@@ -88,7 +90,7 @@ public class Proxy : IDisposable
                 _users.TryAdd(username, userConnections);
             }
 
-            _logger.Error("Authorization success client: {@Client} username: {@User}"
+            _logger.Information("Authorization success client: {@Client} username: {@User}"
                 , client!.EndPoint!.ToString()
                 , username);
             return true;
@@ -100,31 +102,33 @@ public class Proxy : IDisposable
     }
     private bool checkProxyCA()
     {
-        if (!_proxyCert.Verify())
+        try
+        {
+            if (!_proxyCert.HasPrivateKey)
+                return false;
+
+            if (string.IsNullOrEmpty(_proxyCert.Thumbprint))
+                return false;
+
+            if (string.IsNullOrEmpty(_proxyCert.SerialNumber))
+                return false;
+
+            if (string.IsNullOrEmpty(_proxyCert.SubjectName.Name))
+                return false;
+
+            var san = _proxyCert.Extensions.OfType<X509SubjectAlternativeNameExtension>().First();
+            if (san.EnumerateIPAddresses().Count() == 0 && san.EnumerateDnsNames().Count() == 0)
+                return false;
+        }
+        catch (CryptographicException)
         {
             return false;
         }
-        if (!_proxyCert.HasPrivateKey)
+        catch
         {
-            Console.WriteLine("Сертификат не имеет приватного ключа!");
+            return false;
         }
 
-        Console.WriteLine($"HasPrivateKey: {_proxyCert.HasPrivateKey}");
-        Console.WriteLine($"PrivateKey: {_proxyCert.PrivateKey}");
-        Console.WriteLine($"GetRSAPrivateKey(): {_proxyCert.GetRSAPrivateKey() != null}");
-
-
-        var san = _proxyCert.Extensions
-            .OfType<X509SubjectAlternativeNameExtension>()
-            .FirstOrDefault();
-
-        if (san != null)
-        {
-            foreach (var name in san.EnumerateDnsNames())
-                Console.WriteLine($"SAN DNS: {name}");
-            foreach (var ip in san.EnumerateIPAddresses())
-                Console.WriteLine($"SAN IP: {ip}");
-        }
         return true;
     }
     public async Task StartAsync()
@@ -352,7 +356,7 @@ public class Proxy : IDisposable
                                     var target = new TcpClientWrapper(targetEndpoint);
                                     CreateTcpTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
 
-                                    _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                                    _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
                                         , client.EndPoint!.ToString()
                                         , proxyContext.Username
                                         , target.EndPoint!.ToString());
@@ -362,7 +366,7 @@ public class Proxy : IDisposable
                                 {
                                     CreateUdpTunnel(targetEndpoint, proxyContext).StartAsync();
 
-                                    _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                                    _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
                                         , client.EndPoint!.ToString()
                                         , proxyContext.Username
                                         , targetEndpoint.ToString());
@@ -389,7 +393,7 @@ public class Proxy : IDisposable
                                 ;break;
                         }
 
-                        _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                        _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
                                         , client.EndPoint!.ToString()
                                         , proxyContext.Username
                                         , context.TargetAddress);
@@ -460,7 +464,7 @@ public class Proxy : IDisposable
 
                     await client.WriteAsync(resp.ToByteArray());
 
-                    _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                    _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
                                         , client.EndPoint!.ToString()
                                         , proxyContext.Username
                                         , connectedClient.EndPoint!.ToString());
@@ -570,7 +574,7 @@ public class Proxy : IDisposable
             if (!IsRuleAccess)
             {
                 await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
-                _logger.Information("Reject by rule: {@Client} username: {@User} to {@Server} Protocol: HTTPS"
+                _logger.Information("Reject by rule: client: {@Client} username: {@User} to {@Server} Protocol: HTTPS"
                                         , client.EndPoint!.ToString()
                                         , context.Username
                                         , target.client.EndPoint!.ToString());
@@ -584,7 +588,7 @@ public class Proxy : IDisposable
 
             await client.WriteAsync(HttpServerResponses.Connected.ToByteArray());
 
-            _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: HTTPS"
+            _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: HTTPS"
                                         , client.EndPoint!.ToString()
                                         , context.Username
                                         , target.client.EndPoint!.ToString());
@@ -633,7 +637,7 @@ public class Proxy : IDisposable
             if (!IsRuleAccess)
             {
                 await client.WriteAsync(HttpServerResponses.Forbidden.ToByteArray());
-                _logger.Information("Reject by rule: {@Client} username: {@User} to {@Server} Protocol: HTTP"
+                _logger.Information("Reject by rule client: {@Client} username: {@User} to {@Server} Protocol: HTTP"
                                         , client.EndPoint!.ToString()
                                         , context.Username
                                         , target.client.EndPoint!.ToString());
@@ -645,7 +649,7 @@ public class Proxy : IDisposable
 
             CreateTcpTunnel(client, target.client, AllowProtocols.HTTP).StartAsync();
 
-            _logger.Information("Connect: {@Client} username: {@User} to {@Server} Protocol: HTTP"
+            _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: HTTP"
                                         , client.EndPoint!.ToString()
                                         , context.Username
                                         , target.client.EndPoint!.ToString());
@@ -675,7 +679,7 @@ public class Proxy : IDisposable
 
             _context.TryAdd(client.EndPoint, new ProxyClientContext());
 
-            _logger.Information("Try connection to proxy: client: {@Client}", client.EndPoint!.ToString());
+            _logger.Information("Try connection to proxy client: {@Client}", client.EndPoint!.ToString());
 
             if (_settings.IsTlsProxy)
             {
@@ -707,7 +711,7 @@ public class Proxy : IDisposable
         }
         catch (AuthenticationException ex)
         {
-            _logger.Error("Ssl Error {@Msg} client: {@Client}", ex.Message, client.EndPoint!.ToString());
+            _logger.Error("Ssl Error - {@Msg} client: {@Client}", ex.Message, client.EndPoint!.ToString());
             this.Server_OnClientDisconnect(client);
         }
         catch

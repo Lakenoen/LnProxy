@@ -3,6 +3,7 @@ using SocksModule;
 using System;
 using System.Net;
 using ProxyModule;
+using IndexModule;
 using static SocksModule.SocksContext;
 using System.Net.Sockets;
 using System.Text;
@@ -16,7 +17,7 @@ namespace TestModule
         {
             //init
             UdpClient serverUdp = new UdpClient(8000);
-            Proxy server = new Proxy();
+            Proxy server = new Proxy(new ProxySettings("Settings.txt"));
             var task = server.StartAsync();
             TcpClientWrapper client = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
 
@@ -94,7 +95,7 @@ namespace TestModule
                 Task.Delay(1).Wait();
             };
 
-            Proxy server = new Proxy();
+            Proxy server = new Proxy(new ProxySettings("Settings.txt"));
             var task = server.StartAsync();
 
             TcpClientWrapper connect = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
@@ -156,5 +157,15 @@ namespace TestModule
             server.Dispose();
         }
 
+        [Fact]
+        public void BTreeTest()
+        {
+            BNodeManager manager = new BNodeManager(3);
+            var firstNode = manager.CreateNode();
+            firstNode.Add(new Element( (Data)9, (Data)0) );
+            firstNode.Add(new Element( (Data)8, (Data)0) );
+            firstNode.Insert(new Element((Data)10, (Data)0), 1);
+            firstNode.Remove(0);
+        }
     }
 }

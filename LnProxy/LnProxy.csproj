@@ -10,7 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ProxyModule\ProxyModule.csproj" />
+	<ProjectReference Include="..\ProxyModule\ProxyModule.csproj" />
+	<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+	<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.1" />
   </ItemGroup>
 
 	<ItemGroup>
