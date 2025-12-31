@@ -33,7 +33,7 @@ public class Proxy : IDisposable
     {
         _settings = settings;
 
-        _server = new TcpServer(IPEndPoint.Parse("0.0.0.0:443"));
+        _server = new TcpServer(_settings.InternalTcpEndPoint);
         _server.OnConnected += Server_OnConnected;
         _server.OnReaded += Server_OnReaded;
         _server.OnClientDisconnect += Server_OnClientDisconnect;
@@ -288,7 +288,7 @@ public class Proxy : IDisposable
         {
             var context = new SocksContext()
             {
-                ServerTcpEndPoint = _settings.SocksExternalTcpEndPoint,
+                ServerTcpEndPoint = _settings.ExternalTcpEndPoint,
                 BindServerEndPoint = _settings.SocksExternalBindEndPoint,
                 ServerUdpEndPoint = _settings.SocksExternalUdpEndPoint,
                 CheckAddrType = b =>

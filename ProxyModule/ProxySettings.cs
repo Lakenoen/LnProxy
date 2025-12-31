@@ -18,7 +18,8 @@ public class ProxySettings : ISettings
     private string _proxyCrtPasswd = string.Empty;
     private bool _isTlsProxy = false;
     private bool _authEnable = false;
-    private IPEndPoint? _socksExternalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:0");
+    private IPEndPoint? _internalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:1080");
+    private IPEndPoint? _externalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:1080");
     private IPEndPoint? _socksExternalBindEndPoint;
     private IPEndPoint? _socksExternalUdpEndPoint;
     private string[] _allowAddrTypes = { "domain", "ipv4", "ipv6" };
@@ -32,7 +33,8 @@ public class ProxySettings : ISettings
     public string ProxyCrtPasswd => _proxyCrtPasswd;
     public bool IsTlsProxy => _isTlsProxy;
     public bool AuthEnable => _authEnable;
-    public IPEndPoint SocksExternalTcpEndPoint => _socksExternalTcpEndPoint!;
+    public IPEndPoint InternalTcpEndPoint => _internalTcpEndPoint!;
+    public IPEndPoint ExternalTcpEndPoint => _externalTcpEndPoint!;
     public IPEndPoint SocksExternalBindEndPoint => _socksExternalBindEndPoint!;
     public IPEndPoint SocksExternalUdpEndPoint => _socksExternalUdpEndPoint!;
     public int DefaultHttpPort => _defaultHttpPort;
@@ -91,7 +93,8 @@ public class ProxySettings : ISettings
                 case "ProxyCertPasswd": this._proxyCrtPasswd = keyValue[1].Trim(); break;
                 case "EnableTls": this._isTlsProxy = bool.Parse(keyValue[1].Trim()); break;
                 case "EnableAuth": this._authEnable = bool.Parse(keyValue[1].Trim()); break;
-                case "SocksExternalTcpAddress": this._socksExternalTcpEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
+                case "ExternalTcpAddress": this._externalTcpEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
+                case "InternalTcpAddress": this._internalTcpEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
                 case "SocksExternalBindAddress": this._socksExternalBindEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
                 case "SocksExternalUdpAddress": this._socksExternalUdpEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
                 case "AllowAddressTypes": _allowAddrTypes = keyValue[1].Split(' ', ',').Select( (el, i)=> el.ToLower().Trim()).ToArray(); break;

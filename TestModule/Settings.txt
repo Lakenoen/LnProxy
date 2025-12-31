@@ -1,6 +1,4 @@
-﻿ProxyCertPath: ../../../../../proxy.pfx
-ProxyCertPasswd: pass1
-EnableTls: true
+﻿EnableTls: false
 EnableAuth: true
 DefaultHttpPort: 80
 MaxUserConnection: 3

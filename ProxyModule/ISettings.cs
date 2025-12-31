@@ -19,7 +19,8 @@ public interface ISettings
     public int DefaultHttpPort { get; }
     public int MaxUserConnection { get; }
     public Logger? Logger { get; }
-    public IPEndPoint SocksExternalTcpEndPoint { get; }
+    public IPEndPoint InternalTcpEndPoint { get; }
+    public IPEndPoint ExternalTcpEndPoint { get; }
     public IPEndPoint SocksExternalBindEndPoint { get; }
     public IPEndPoint SocksExternalUdpEndPoint { get; }
     public bool SocksCheckAllowCommand(ConnectType type);

@@ -16,10 +16,11 @@ namespace TestModule
         public async Task SocksUdpTest()
         {
             //init
+            ProxySettings settings = new ProxySettings("Settings.txt");
             UdpClient serverUdp = new UdpClient(8000);
-            Proxy server = new Proxy(new ProxySettings("Settings.txt"));
+            Proxy server = new Proxy(settings);
             var task = server.StartAsync();
-            TcpClientWrapper client = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
+            TcpClientWrapper client = new TcpClientWrapper(settings.ExternalTcpEndPoint);
 
 
             //socks handshake
@@ -95,10 +96,11 @@ namespace TestModule
                 Task.Delay(1).Wait();
             };
 
-            Proxy server = new Proxy(new ProxySettings("Settings.txt"));
+            var settings = new ProxySettings("Settings.txt");
+            Proxy server = new Proxy(settings);
             var task = server.StartAsync();
 
-            TcpClientWrapper connect = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
+            TcpClientWrapper connect = new TcpClientWrapper(settings.ExternalTcpEndPoint);
             TcpGreetingClientRequest request = new TcpGreetingClientRequest()
             {
                 Ver = 0x5,
@@ -119,7 +121,7 @@ namespace TestModule
             await connect.WriteAsync(clientConnectReq.ToByteArray());
             var connectServResp = TcpConnectionServerResponse.Parse(await connect.ReadAvailableAsync());
 
-            TcpClientWrapper bind = new TcpClientWrapper(IPEndPoint.Parse("192.168.0.103:8888"));
+            TcpClientWrapper bind = new TcpClientWrapper(settings.ExternalTcpEndPoint);
             request = new TcpGreetingClientRequest()
             {
                 Ver = 0x5,
