@@ -23,8 +23,9 @@ public class Program
             Proxy server = new Proxy(settings);
             settings.Changed += () =>
             {
-                server.Dispose();
+                settings = new ProxySettings("Settings.txt");
                 fatalLogger.Information("Settings changed");
+                server.Dispose();
             };
             await server.StartAsync();
             do
@@ -78,8 +79,9 @@ class Worker : BackgroundService
             });
             settings.Changed += () =>
             {
-                server.Dispose();
+                settings = new ProxySettings("Settings.txt");
                 fatalLogger.Information("Settings changed");
+                server.Dispose();
             };
             await server.StartAsync();
 

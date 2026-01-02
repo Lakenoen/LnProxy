@@ -56,14 +56,16 @@ public class ProxySettings : ISettings
         return "pass";
     }
 
+    private readonly string _settingsPath = string.Empty;
     private FileSystemWatcher _watcher = new FileSystemWatcher();
     public ProxySettings(string path)
     {
+        this._settingsPath = path;
         ParseSettings(path);
 
         _watcher.Path = Path.GetDirectoryName( Path.GetFullPath(path) );
         _watcher.NotifyFilter = NotifyFilters.LastWrite;
-        _watcher.Filter = Path.GetFileName(path);
+        _watcher.Filter = "*.txt";
 
         _watcher.Changed += _watcher_Changed;
         _watcher.EnableRaisingEvents = true;
@@ -71,7 +73,8 @@ public class ProxySettings : ISettings
 
     private void _watcher_Changed(object sender, FileSystemEventArgs e)
     {
-        this.Changed?.Invoke();
+        if(e.Name == this._pathToRuleFile || e.Name == this._settingsPath)
+            this.Changed?.Invoke();
     }
 
     private void ParseSettings(string path)
