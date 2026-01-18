@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace IndexModule;
 public class BNode
 {
+    public bool IsLeaf { get; set; } = false;
     public int Max { get; init; }
     public int Min { get; init; }
     public int T {  get; init; }
@@ -17,6 +19,11 @@ public class BNode
     public static implicit operator int(BNode param)
     {
         return param.Address;
+    }
+    public Element? this[int i]
+    {
+        get => _values[i];
+        set => _values[i] = value;
     }
     public BNode(int t, int address)
     {
@@ -29,32 +36,25 @@ public class BNode
     public void Add(Element[] elems)
     {
         foreach (Element e in elems)
-            AddWithoutSort(e);
-        Array.Sort(this._values, 0, Count);
+            if(e is not null)
+                Add(e);
     }
 
-    public Element[] GetRangeElements(int start, int end) => new Memory<Element>(_values!, start, end).ToArray();
+    public Element[] GetRangeElements(int start, int end) => new Memory<Element>(_values!, start, end - start + 1).ToArray();
     public void Fill(Element? el, int start, int end)
     {
         for(int i = start; i <= end; i++)
             _values![i] = el;
     }
-    public void Add(Element el)
+    public int Add(Element el)
     {
-        AddWithoutSort(el);
-        Array.Sort(this._values,0, Count);
+        int newPos = BinaryFind(el);
+        return Insert(el, newPos);
     }
-    private void AddWithoutSort(Element el)
+    public void Sort() => Array.Sort(this._values, 0, Count);
+    public int Insert(Element el, int i)
     {
         if (Count + 1 > Max)
-            throw new IndexOutOfRangeException();
-
-        _values[Count] = el;
-        ++Count;
-    }
-    public void Insert(Element el, int i)
-    {
-        if (i > LastIndex() || Count + 1 > Max)
             throw new IndexOutOfRangeException();
 
         for(int j = Count; j > i; --j)
@@ -63,20 +63,46 @@ public class BNode
         }
         _values[i] = el;
         ++Count;
+        return i;
     }
 
-    public (int link, int pos) Search(BNode child) {
-        int link = -1;
-        int pos = -1;
+    public int Search(Element el)
+    {
+        int pos = BinaryFind(el);
+        if (this[pos] != null && this[pos]!.Equals(el))
+            return pos;
+        return -1;
+    }
+    public int BinaryFind(Element el)
+    {
+        int mid = 0;
+        int left = 0;
+        int right = LastIndex();
+        int insertPos = Math.Min(this.Count, this._values.Length - 1);
 
-        //TODO
+        if (left > right)
+            return 0;
 
-        return (link, pos);
+        while (left <= right)
+        {
+            mid = (left + right) / 2;
+            if (this[mid] is null)
+                return mid;
+            else if (el > this[mid]!)
+                left = mid + 1;
+            else
+            {
+                right = mid - 1;
+                insertPos = mid;
+            }
+        }
+
+        return insertPos;
     }
     public void Remove(int start, int end)
     {
         for (int i = start; i <= end; i++)
-            Remove(i);
+            Remove(start);
     }
     public void Remove(int i)
     {
@@ -92,7 +118,7 @@ public class BNode
     }
     public int GetMidIndex()
     {
-        return LastIndex() / 2 + 1;
+        return LastIndex() / 2;
     }
     public Element? GetMidElem()
     {

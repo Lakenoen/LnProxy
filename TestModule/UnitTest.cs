@@ -162,12 +162,21 @@ namespace TestModule
         [Fact]
         public void BTreeTest()
         {
-            BNodeManager manager = new BNodeManager(3);
-            var firstNode = manager.CreateNode();
-            firstNode.Add(new Element( (Data)9, (Data)0) );
-            firstNode.Add(new Element( (Data)8, (Data)0) );
-            firstNode.Insert(new Element((Data)10, (Data)0), 1);
-            firstNode.Remove(0);
+            BTreeIndex index = new BTreeIndex(2);
+            index.Insert((Integer)4, (String32)"4");
+            index.Insert((Integer)3, (String32)"3");
+            index.Insert((Integer)2, (String32)"2");
+            index.Insert((Integer)6, (String32)"6");
+            index.Insert((Integer)5, (String32)"5");
+            index.Insert((Integer)7, (String32)"7");
+            index.Insert((Integer)1, (String32)"1");
+            index.Insert((Integer)0, (String32)"0");
+            index.Insert((Integer)11, (String32)"11");
+            index.Insert((Integer)12, (String32)"12");
+            index.Insert((Integer)13, (String32)"13");
+            index.Insert((Integer)10, (String32)"10");
+
+            String32? el = (String32?)index.Search((Integer)7);
         }
     }
 }
