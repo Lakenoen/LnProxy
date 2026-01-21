@@ -33,8 +33,8 @@ public class BNodeManager(int t)
 
         child.Add(sibling.GetRangeElements(0, sibling.Count));
         int insertPos = child.Add(mid);
-        mid.Links[0] = child[insertPos - 1]!.Links[1];
-        mid.Links[1] = child[insertPos + 1]!.Links[0];
+        mid.Links[0] = (insertPos > 0) ? child[insertPos - 1]!.Links[1] : -1;
+        mid.Links[1] = (insertPos < child.Count) ? child[insertPos + 1]!.Links[0] : -1;
 
         if (pos + 1 < parent.Count && parent[pos + 1] is not null)
             parent[pos + 1]!.Links[0] = child;

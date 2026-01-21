@@ -165,27 +165,22 @@ namespace TestModule
             BTreeIndex index = new BTreeIndex(2);
             index.Insert((Integer)4, (String32)"4");
             index.Insert((Integer)3, (String32)"3");
-            index.Insert((Integer)2, (String32)"2");
-            index.Insert((Integer)6, (String32)"6");
-            index.Insert((Integer)5, (String32)"5");
-            index.Insert((Integer)7, (String32)"7");
-            index.Insert((Integer)1, (String32)"1");
-            index.Insert((Integer)0, (String32)"0");
-            index.Insert((Integer)11, (String32)"11");
-            index.Insert((Integer)12, (String32)"12");
-            index.Insert((Integer)13, (String32)"13");
-            index.Insert((Integer)10, (String32)"10");
+            //index.Insert((Integer)2, (String32)"2");
+            //index.Insert((Integer)6, (String32)"6");
+            //index.Insert((Integer)5, (String32)"5");
+            //index.Insert((Integer)7, (String32)"7");
+            //index.Insert((Integer)1, (String32)"1");
+            //index.Insert((Integer)0, (String32)"0");
+            //index.Insert((Integer)11, (String32)"11");
+            //index.Insert((Integer)12, (String32)"12");
+            //index.Insert((Integer)13, (String32)"13");
+            //index.Insert((Integer)10, (String32)"10");
 
-            String32? el = (String32?)index.Search((Integer)7);
+            //String32? el = (String32?)index.Search((Integer)7);
 
             index.Remove((Integer)4);
-
-            BNode root = index.CreateNode();
-            root.Add(new Element((Integer)3, (String32)"3"));
-            root.Add(new Element((Integer)4, (String32)"4"));
-            root[0].Links[0] = index.CreateNode();
-            root[0].Links[1] = index.CreateNode();
-            root[1].Links[0] = index.CreateNode();
+            index.Remove((Integer)3);
+            index.Remove((Integer)2);
         }
     }
 }

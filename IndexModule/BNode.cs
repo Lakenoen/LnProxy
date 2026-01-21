@@ -110,7 +110,7 @@ public class BNode
     }
     public void Remove(int i)
     {
-        if (i > LastIndex() || Count - 1 < Min)
+        if (i > LastIndex())
             throw new IndexOutOfRangeException();
 
         for (int j = i; j < Count - 1; ++j)

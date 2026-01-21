@@ -126,7 +126,11 @@ public class BTreeIndex : BNodeManager
     }
     private void RemoveFromLeaf(AData key, BNode parent, BNode node, int pos)
     {
-        if (node.Count >= node.Min + 1)
+        if(node == this._root)
+        {
+            node.Remove(key);
+        }
+        else if (node != this._root && node.Count >= node.Min + 1)
         {
             node.Remove(key);
         }
@@ -139,14 +143,20 @@ public class BTreeIndex : BNodeManager
                 else if (pos > 0 && _mem[parent[pos - 1]!.Links[0]].Count > parent.Min)
                     RotateRight(key, parent, node, pos - 1);
                 else
+                {
                     Merge(parent, node);
+                    node.Remove(key);
+                }
             }
             else
             {
-                if(_mem[parent[pos]!.Links[0]].Count > parent.Min)
+                if (_mem[parent[pos]!.Links[0]].Count > parent.Min)
                     RotateRight(key, parent, node, pos);
                 else
+                {
                     Merge(parent, node);
+                    node.Remove(key);
+                }
             }
         }
     }
