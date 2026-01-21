@@ -48,7 +48,7 @@ public class BNode
     }
     public int Add(Element el)
     {
-        int newPos = BinaryFind(el);
+        int newPos = BinaryFind(el.Key);
         return Insert(el, newPos);
     }
     public void Sort() => Array.Sort(this._values, 0, Count);
@@ -65,15 +65,14 @@ public class BNode
         ++Count;
         return i;
     }
-
-    public int Search(Element el)
+    public int Search(AData key)
     {
-        int pos = BinaryFind(el);
-        if (this[pos] != null && this[pos]!.Equals(el))
+        int pos = BinaryFind(key);
+        if (this[pos] != null && this[pos]!.Key.Equals(key))
             return pos;
         return -1;
     }
-    public int BinaryFind(Element el)
+    public int BinaryFind(AData el)
     {
         int mid = 0;
         int left = 0;
@@ -88,7 +87,7 @@ public class BNode
             mid = (left + right) / 2;
             if (this[mid] is null)
                 return mid;
-            else if (el > this[mid]!)
+            else if (el > this[mid]!.Key)
                 left = mid + 1;
             else
             {
@@ -98,6 +97,11 @@ public class BNode
         }
 
         return insertPos;
+    }
+
+    public void Remove(AData key)
+    {
+        Remove(Search(key));
     }
     public void Remove(int start, int end)
     {

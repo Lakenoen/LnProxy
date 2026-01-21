@@ -7,10 +7,10 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace IndexModule;
-public class Element : IComparable<Element>, IEquatable<Element>
+public class Element : IComparable<Element>, IEquatable<Element>, ICloneable
 {
-    public AData Key { get; init; }
-    public AData Value { get; init; }
+    public AData Key { get; set; }
+    public AData Value { get; set; }
     public int[] Links { get; set; } = new int[2] { -1, -1 };
 
     public Element(AData key, AData value)
@@ -50,5 +50,10 @@ public class Element : IComparable<Element>, IEquatable<Element>
         if (other is null)
             return false;
         return Key.Equals(other.Key);
+    }
+
+    public object Clone()
+    {
+        return new Element(this.Key, this.Value, this.Links[0], this.Links[1]);
     }
 }

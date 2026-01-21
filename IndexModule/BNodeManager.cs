@@ -45,7 +45,7 @@ public class BNodeManager(int t)
 
     private void MergeLeft(BNode parent, BNode child, int pos)
     {
-        Element mid = parent[pos - 1]!;
+        Element mid = parent[pos]!;
         BNode sibling = _mem[mid.Links[0]];
 
         child.Add(sibling.GetRangeElements(0, sibling.Count));
@@ -53,24 +53,34 @@ public class BNodeManager(int t)
         mid.Links[0] = child[insertPos - 1]!.Links[1];
         mid.Links[1] = child[insertPos + 1]!.Links[0];
 
-        if (pos - 2 >= 0 && parent[pos - 2] is not null)
-            parent[pos - 2]!.Links[1] = child;
+        if (pos - 1 >= 0 && parent[pos - 1] is not null)
+            parent[pos - 1]!.Links[1] = child;
 
-        parent.Remove(pos - 1);
+        parent.Remove(pos);
         Remove(sibling);
     }
     public void Merge(BNode parent, BNode child)
     {
-        int pos = parent.BinaryFind(child[0]!);
+        int pos = parent.BinaryFind(child[0]!.Key);
         if (parent[pos] is null)
             --pos;
 
-        if (_mem[parent[pos]!.Links[1]].Count + child.Count < parent.Max)
-            MergeRight(parent, child, pos);
-        else if (_mem[parent[pos - 1]!.Links[0]].Count + child.Count < parent.Max)
-            MergeLeft(parent, child, pos);
+        if(_mem[parent[pos]!.Links[0]] == child)
+        {
+            if (_mem[parent[pos]!.Links[1]].Count + child.Count < parent.Max)
+                MergeRight(parent, child, pos);
+            else if (pos > 0 && _mem[parent[pos - 1]!.Links[0]].Count + child.Count < parent.Max)
+                MergeLeft(parent, child, pos - 1);
+            else
+                throw new ApplicationException("Merge error");
+        }
         else
-            throw new ApplicationException("Merge error");
+        {
+            if(_mem[parent[pos]!.Links[0]].Count + child.Count < parent.Max)
+                MergeLeft(parent, child, pos);
+            else
+                throw new ApplicationException("Merge error");
+        }
     }
     public BNode Split(BNode parent, BNode node)
     {

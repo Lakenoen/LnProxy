@@ -177,6 +177,15 @@ namespace TestModule
             index.Insert((Integer)10, (String32)"10");
 
             String32? el = (String32?)index.Search((Integer)7);
+
+            index.Remove((Integer)4);
+
+            BNode root = index.CreateNode();
+            root.Add(new Element((Integer)3, (String32)"3"));
+            root.Add(new Element((Integer)4, (String32)"4"));
+            root[0].Links[0] = index.CreateNode();
+            root[0].Links[1] = index.CreateNode();
+            root[1].Links[0] = index.CreateNode();
         }
     }
 }
