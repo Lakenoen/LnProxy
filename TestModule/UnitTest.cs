@@ -162,25 +162,83 @@ namespace TestModule
         [Fact]
         public void BTreeTest()
         {
-            BTreeIndex index = new BTreeIndex(2);
-            index.Insert((Integer)4, (String32)"4");
-            index.Insert((Integer)3, (String32)"3");
-            //index.Insert((Integer)2, (String32)"2");
-            //index.Insert((Integer)6, (String32)"6");
-            //index.Insert((Integer)5, (String32)"5");
-            //index.Insert((Integer)7, (String32)"7");
-            //index.Insert((Integer)1, (String32)"1");
-            //index.Insert((Integer)0, (String32)"0");
-            //index.Insert((Integer)11, (String32)"11");
-            //index.Insert((Integer)12, (String32)"12");
-            //index.Insert((Integer)13, (String32)"13");
-            //index.Insert((Integer)10, (String32)"10");
+            BTreeIndex index = new BTreeIndex(3, new List<BNode>());
+            List<int> data = new List<int>();
+            for (int i = 20; i > 0; --i)
+            {
+                index.Insert((Integer)i, (String32)i.ToString());
+                data.Add(i);
+            }
 
-            //String32? el = (String32?)index.Search((Integer)7);
+            foreach(BNode node in index.Memory)
+            {
+                int links = 0;
+                for(int i = 0; i < node.Count; ++i)
+                {
+                    if (node[i]!.Links[0] > -1)
+                        ++links;
+                    if (node[i]!.Links[1] > -1)
+                        ++links;
+                }
+                if (node.IsLeaf)
+                {
+                    Assert.Equal(0, links);
+                }
+                else
+                {
+                    Assert.Equal(node.Count * 2, links);
+                }
+            }
 
-            index.Remove((Integer)4);
-            index.Remove((Integer)3);
-            index.Remove((Integer)2);
+            List<int> elements = new List<int>();
+            foreach(Element el in index)
+            {
+                elements.Add(((Integer)el.Key).Value);
+            }
+            data.Sort();
+            elements.Sort();
+            Assert.Equal(elements, data);
+
+            foreach (BNode node in index.Memory)
+            {
+                bool isSorted = true;
+                for(int i = 0; i < node.Count - 1; ++i) {
+                    if (node[i]! < node[i + 1]!)
+                        continue;
+                    break;
+                }
+                Assert.True(isSorted);
+            }
+
+            foreach (BNode node in index.Memory)
+            {
+                bool isSorted = true;
+                for (int i = 0; i < node.Count; ++i)
+                {
+                    if (node.IsLeaf)
+                        continue;
+
+                    BNode left = index.Get(node[i].Links[0]);
+                    BNode right = index.Get(node[i].Links[1]);
+                    if (node[i] > left[left.LastIndex()] && node[i] < right[0])
+                        continue;
+                    isSorted = false;
+                }
+                Assert.True(isSorted);
+            }
+
+            foreach (BNode node in index.Memory)
+            {
+                if(node != index._root)
+                    Assert.True(node.Count <= node.Max && node.Count >= node.Min);
+            }
+
+            foreach(int key in data)
+            {
+                String32? val = (String32?)index.Search((Integer)key);
+                Assert.NotNull(val);
+                Assert.Equal(val.Value, key.ToString());
+            }
         }
     }
 }

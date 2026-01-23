@@ -1,14 +1,15 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace IndexModule;
-public class BTreeIndex : BNodeManager
+public class BTreeIndex : BNodeManager, IEnumerable
 {
     public BNode _root;
-    public BTreeIndex(int size) : base(size)
+    public BTreeIndex(int size, IList<BNode> memory) : base(size, memory)
     {
         _root = CreateNode();
     }
@@ -54,7 +55,8 @@ public class BTreeIndex : BNodeManager
         if(_root.Count == _root.Max)
         {
             var newRoot = CreateNode();
-            Split(newRoot, _root);
+            BNode newNode = Split(newRoot, _root);
+            newNode.IsLeaf = _root.IsLeaf;
             _root = newRoot;
             InsertIntoLeaf(newElement);
         }
@@ -214,5 +216,67 @@ public class BTreeIndex : BNodeManager
         var tempVal = el1.Value;
         el1.Value = el2.Value;
         el2.Value = tempVal;
+    }
+
+    public class Enumerator : IEnumerator
+    {
+        private BNode _root;
+        private BNodeManager _manager;
+        private Stack<Pair<BNode, int>> _stack = new Stack<Pair<BNode, int>>();
+        private Element? _current;
+        public object? Current => _current;
+
+        public Enumerator(BNode root, BNodeManager manager)
+        {
+            this._root = root;
+            this._manager = manager;
+            _stack.Push(new Pair<BNode, int>(root, 0));
+        }
+        public bool MoveNext()
+        {
+            if (_stack.Count == 0)
+                return false;
+
+            Pair<BNode, int> el = _stack.Peek();
+            while (el.Item2 >= el.Item1.Count)
+            {
+                _stack.Pop();
+                if(_stack.Count == 0)
+                    return false;
+                el = _stack.Peek();
+            }
+
+            if (!el.Item1.IsLeaf && el.Item2 == 0)
+            {
+                int i;
+                for (i = 0; i < el.Item1.Count; i++)
+                {
+                    _stack.Push(new Pair<BNode, int>(_manager.Get(el.Item1[i]!.Links[0]), 0));
+                }
+                _stack.Push(new Pair<BNode, int>(_manager.Get(el.Item1[i-1]!.Links[1]), 0));
+            }
+            _current = el.Item1[el.Item2++];
+            return true;
+        }
+
+        public void Reset()
+        {
+            _stack.Clear();
+            _stack.Push(new Pair<BNode, int>(_root, 0));
+        }
+        private class Pair<T1, T2>(T1 item1, T2 item2)
+        {
+            public T1 Item1 { get; set; } = item1;
+            public T2 Item2 { get; set; } = item2;
+        }
+    }
+    public IEnumerator GetEnumerator()
+    {
+        return new Enumerator(this._root, this);
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 }

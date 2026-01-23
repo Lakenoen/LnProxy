@@ -5,26 +5,25 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace IndexModule;
-public class BNodeManager(int t)
+public class BNodeManager(int t, IList<BNode> memory)
 {
-    protected readonly List<BNode> _mem = new List<BNode>();
-    protected readonly List<int> _removed = new List<int>();
+    protected readonly IList<BNode> _mem = memory;
     private int _index = 0;
     protected int T { get; init; } = t;
+    public IList<BNode> Memory => _mem;
     public BNode CreateNode()
     {
         var node = new BNode(T, _index++);
         _mem.Add(node);
         return node;
     }
-    public BNode Get(int addr) => _mem[addr];
-    public void Remove(BNode elem)
+    public BNode Get(int index)
     {
-        _removed.Add(elem.Address);
+        return _mem[index];
     }
-    public void Remove(int address)
+    protected void Remove(BNode elem)
     {
-        _removed.Add(address);
+        elem.Dead = true;
     }
     private void MergeRight(BNode parent, BNode child, int pos)
     {
@@ -59,7 +58,7 @@ public class BNodeManager(int t)
         parent.Remove(pos);
         Remove(sibling);
     }
-    public void Merge(BNode parent, BNode child)
+    protected void Merge(BNode parent, BNode child)
     {
         int pos = parent.BinaryFind(child[0]!.Key);
         if (parent[pos] is null)
@@ -82,7 +81,7 @@ public class BNodeManager(int t)
                 throw new ApplicationException("Merge error");
         }
     }
-    public BNode Split(BNode parent, BNode node)
+    protected BNode Split(BNode parent, BNode node)
     {
         Element? mid = node.GetMidElem();
         if (mid is null)

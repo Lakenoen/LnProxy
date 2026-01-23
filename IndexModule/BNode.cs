@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 namespace IndexModule;
 public class BNode
 {
+    public bool Dead { get; set; } = false;
     public bool IsLeaf { get; set; } = false;
     public int Max { get; init; }
     public int Min { get; init; }
