@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace IndexModule;
-public abstract class AData : IEquatable<AData>, IComparable<AData>
+public abstract class AData : IEquatable<AData>, IComparable<AData>, Serialilzable
 {
     public bool Equals(AData? other)
     {
@@ -18,7 +18,6 @@ public abstract class AData : IEquatable<AData>, IComparable<AData>
         return CompareTo(other).Equals(0);
     }
     public abstract int CompareTo(AData? other);
-    public abstract byte[] ToByteArray();
     public abstract int Size { get;}
     public static bool operator <(AData first, AData second)
     {
@@ -37,4 +36,11 @@ public abstract class AData : IEquatable<AData>, IComparable<AData>
         return (first.CompareTo(second) > 0 || first.CompareTo(second) == 0);
     }
 
+    public abstract override int GetHashCode();
+
+    public abstract byte[] ToByteArray();
+
+    public abstract Serialilzable FromByteArray(byte[] data);
+
+    public abstract object Clone();
 }

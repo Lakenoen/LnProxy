@@ -5,15 +5,22 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace IndexModule;
-public class BNodeManager(int t, IList<BNode> memory)
+public class BNodeManager
 {
-    protected readonly IList<BNode> _mem = memory;
+    protected readonly IList<BNode> _mem;
     private int _index = 0;
-    protected int T { get; init; } = t;
+    protected int T { get; init; }
     public IList<BNode> Memory => _mem;
+    protected (Types key, Types value) _types;
+    public BNodeManager(int t, IList<BNode> memory, Types key, Types value)
+    {
+        _types = (key,value);
+        this._mem = memory;
+        this.T = t;
+    }
     public BNode CreateNode()
     {
-        var node = new BNode(T, _index++);
+        var node = new BNode(T, _index++, _types.key, _types.value);
         _mem.Add(node);
         return node;
     }
@@ -40,6 +47,10 @@ public class BNodeManager(int t, IList<BNode> memory)
 
         parent.Remove(pos);
         Remove(sibling);
+
+        Update(sibling);
+        Update(parent);
+        Update(child);
     }
 
     private void MergeLeft(BNode parent, BNode child, int pos)
@@ -57,6 +68,10 @@ public class BNodeManager(int t, IList<BNode> memory)
 
         parent.Remove(pos);
         Remove(sibling);
+
+        Update(sibling);
+        Update(parent);
+        Update(child);
     }
     protected void Merge(BNode parent, BNode child)
     {
@@ -102,6 +117,16 @@ public class BNodeManager(int t, IList<BNode> memory)
             parent[pos + 1]!.Links[0] = newNode;
         }
 
+        Update(parent);
+        Update(node);
+        Update(newNode);
+
         return newNode;
+    }
+
+    protected void Update(BNode node)
+    {
+        if (this._mem is Updatable<BNode> updatable)
+            updatable.Update(node);
     }
 }

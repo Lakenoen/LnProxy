@@ -162,7 +162,10 @@ namespace TestModule
         [Fact]
         public void BTreeTest()
         {
-            BTreeIndex index = new BTreeIndex(3, new List<BNode>());
+            var node0 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
+            FileIndex<BNode> file = new FileIndex<BNode>("testFileIndex.bin", node0.Size);
+
+            BTreeIndex index = new BTreeIndex(3, file, Types.INTEGER, Types.STRING32);
             List<int> data = new List<int>();
             for (int i = 20; i > 0; --i)
             {
@@ -239,6 +242,27 @@ namespace TestModule
                 Assert.NotNull(val);
                 Assert.Equal(val.Value, key.ToString());
             }
+        }
+
+        [Fact]
+        public void FileIndexTest()
+        {
+            var node0 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
+            FileIndex<BNode> file = new FileIndex<BNode>("testFileIndex.bin", node0.Size);
+            BNode node1 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
+            node1.Add(new Element((Integer)1, (String32)"1"));
+            node1.Add(new Element((Integer)2, (String32)"2"));
+            node1.Add(new Element((Integer)3, (String32)"3"));
+            file[0] = node1;
+            var nodeClone = file[0];
+
+            BNode node2 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
+            node2.Add(new Element((Integer)6, (String32)"6"));
+            node2.Add(new Element((Integer)5, (String32)"5"));
+            node2.Add(new Element((Integer)4, (String32)"4"));
+            file[1] = node2;
+
+            nodeClone = file[1];
         }
     }
 }

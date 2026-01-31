@@ -9,9 +9,14 @@ namespace IndexModule;
 public class BTreeIndex : BNodeManager, IEnumerable
 {
     public BNode _root;
-    public BTreeIndex(int size, IList<BNode> memory) : base(size, memory)
+    public BTreeIndex(int size, IList<BNode> memory, Types key, Types value) : base(size, memory, key, value)
     {
-        _root = CreateNode();
+        if(memory.Count == 0)
+            _root = CreateNode();
+        else
+        {
+            
+        }
     }
 
     public AData? Search(AData key)
@@ -55,9 +60,12 @@ public class BTreeIndex : BNodeManager, IEnumerable
         if(_root.Count == _root.Max)
         {
             var newRoot = CreateNode();
+            newRoot.isRoot = true;
+            _root.isRoot = false;
             BNode newNode = Split(newRoot, _root);
             newNode.IsLeaf = _root.IsLeaf;
             _root = newRoot;
+            Update(newNode);
             InsertIntoLeaf(newElement);
         }
         else
@@ -82,6 +90,7 @@ public class BTreeIndex : BNodeManager, IEnumerable
             {
                 p.IsLeaf = true;
                 p.Add(newElement);
+                Update(p);
                 return;
             }
 
@@ -89,14 +98,18 @@ public class BTreeIndex : BNodeManager, IEnumerable
 
             if (p.Count == p.Max)
             {
-                Split(parent, p).IsLeaf = true;
+                var newNode = Split(parent, p);
+                newNode.IsLeaf = true;
                 p.IsLeaf = true;
                 parent.IsLeaf = false;
                 p = parent;
+                Update(parent);
+                Update(newNode);
             }
         }
 
         p.Add(newElement);
+        Update(p);
     }
 
     public void Remove(AData key)
@@ -131,10 +144,12 @@ public class BTreeIndex : BNodeManager, IEnumerable
         if(node == this._root)
         {
             node.Remove(key);
+            Update(node);
         }
         else if (node != this._root && node.Count >= node.Min + 1)
         {
             node.Remove(key);
+            Update(node);
         }
         else
         {
@@ -148,6 +163,7 @@ public class BTreeIndex : BNodeManager, IEnumerable
                 {
                     Merge(parent, node);
                     node.Remove(key);
+                    Update(node);
                 }
             }
             else
@@ -158,6 +174,7 @@ public class BTreeIndex : BNodeManager, IEnumerable
                 {
                     Merge(parent, node);
                     node.Remove(key);
+                    Update(node);
                 }
             }
         }
@@ -180,6 +197,10 @@ public class BTreeIndex : BNodeManager, IEnumerable
         right.Remove(0);
 
         node.Remove(key);
+
+        Update(node);
+        Update(right);
+        Update(parent);
     }
     private void RotateRight(AData key, BNode parent, BNode node, int pos)
     {
@@ -199,6 +220,10 @@ public class BTreeIndex : BNodeManager, IEnumerable
         left.Remove(left.LastIndex());
 
         node.Remove(key);
+
+        Update(node);
+        Update(left);
+        Update(parent);
     }
     private int BinaryFindWithoutNull(BNode node, AData key)
     {

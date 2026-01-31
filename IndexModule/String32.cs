@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace IndexModule;
 public class String32() : AData
@@ -22,7 +23,36 @@ public class String32() : AData
     }
     public override byte[] ToByteArray()
     {
-        return Encoding.UTF8.GetBytes(Value);
+        using MemoryStream stream = new MemoryStream();
+        using BinaryWriter writer = new BinaryWriter(stream);
+        byte[] data = Encoding.UTF8.GetBytes(Value);
+        writer.Write(data.Length);
+        writer.Flush();
+        Array.Resize(ref data, this.Size);
+        writer.Write(data);
+        writer.Flush();
+        return stream.ToArray();
+    }
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+
+    public override Serialilzable FromByteArray(byte[] data)
+    {
+        if (data.Length > this.Size)
+            throw new ArgumentException("String32 size error");
+
+        using MemoryStream stream = new MemoryStream(data);
+        using BinaryReader reader = new BinaryReader(stream);
+        int len = reader.ReadInt32();
+        byte[] payload = reader.ReadBytes(len);
+        return (String32) Encoding.UTF8.GetString(payload);
+    }
+
+    public override object Clone()
+    {
+        return new String32(Value);
     }
 
     public static explicit operator String32(string value)

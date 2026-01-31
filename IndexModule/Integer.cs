@@ -26,6 +26,21 @@ public class Integer() : AData
         return BitConverter.GetBytes(Value);
     }
 
+    public override int GetHashCode()
+    {
+        return Value.GetHashCode();
+    }
+
+    public override Serialilzable FromByteArray(byte[] data)
+    {
+        return (Integer) BitConverter.ToInt32(data);
+    }
+
+    public override object Clone()
+    {
+        return new Integer(Value);
+    }
+
     public static explicit operator Integer(int value)
     {
         return new Integer(value);
