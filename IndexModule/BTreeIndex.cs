@@ -8,14 +8,27 @@ using System.Threading.Tasks;
 namespace IndexModule;
 public class BTreeIndex : BNodeManager, IEnumerable
 {
-    public BNode _root;
+    public BNode? _root;
     public BTreeIndex(int size, IList<BNode> memory, Types key, Types value) : base(size, memory, key, value)
     {
-        if(memory.Count == 0)
+        if (memory.Count == 0)
+        {
             _root = CreateNode();
+            _root.isRoot = true;
+            Update(_root);
+        }
         else
         {
-            
+            foreach (BNode node in memory)
+            {
+                if (!node.isRoot)
+                    continue;
+                _root = node;
+                break;
+            }
+
+            if (_root is null)
+                throw new ApplicationException("The index file is probably damaged");
         }
     }
 
@@ -23,17 +36,17 @@ public class BTreeIndex : BNodeManager, IEnumerable
     {
         return Find(key, out _, out _)?.Value;
     }
-    private Element? Find(AData key, out BNode node, out BNode parent)
+    private Element? Find(AData key, out BNode node, out List<BNode> parents)
     {
         Element searchElem = new Element(key, key);
-        BNode p = _root;
-        parent = p;
+        BNode p = _root!;
         int pos = 0;
+        parents = new List<BNode>();
 
         while (!p.IsLeaf)
         {
             node = p;
-            pos = BinaryFindWithoutNull(p, searchElem.Key);
+            pos = GetPosition(p, searchElem.Key);
 
             if (p[pos] is null)
                 return null;
@@ -44,7 +57,7 @@ public class BTreeIndex : BNodeManager, IEnumerable
             if (p[pos]!.Links[1].Equals(-1))
                 return null;
 
-            parent = p;
+            parents.Add(p);
             p = (searchElem < p[pos]!) ? _mem[p[pos]!.Links[0]] : p = _mem[p[pos]!.Links[1]];
         }
 
@@ -53,11 +66,15 @@ public class BTreeIndex : BNodeManager, IEnumerable
         if (pos < 0) return null;
         return p[pos];
     }
-    public void Insert(AData key, AData value)
+    public bool Insert(AData key, AData value)
     {
+
+        if (Search(key) is not null)
+            return false;
+
         Element newElement = new Element(key, value);
         
-        if(_root.Count == _root.Max)
+        if(_root!.Count == _root.Max)
         {
             var newRoot = CreateNode();
             newRoot.isRoot = true;
@@ -73,18 +90,19 @@ public class BTreeIndex : BNodeManager, IEnumerable
             InsertIntoLeaf(newElement);
         }
 
+        return true;
     }
 
     private void InsertIntoLeaf(Element newElement)
     {
-        BNode p = _root;
+        BNode p = _root!;
         BNode parent = p;
 
         while (!p.IsLeaf)
         {
             parent = p;
 
-            int pos = BinaryFindWithoutNull(p, newElement.Key);
+            int pos = GetPosition(p, newElement.Key);
 
             if (p[pos] is null || p[pos]!.Links[1].Equals(-1))
             {
@@ -112,135 +130,97 @@ public class BTreeIndex : BNodeManager, IEnumerable
         Update(p);
     }
 
-    public void Remove(AData key)
+    public bool Remove(AData key)
     {
-        Element? el = Find(key, out BNode node, out BNode parent);
+        Element? el = Find(key, out BNode node, out List<BNode> parents);
         if (el is null)
-            return;
+            return false;
 
         if (node.IsLeaf)
         {
-            int parentPos = BinaryFindWithoutNull(parent, el.Key);
-            RemoveFromLeaf(key, parent, node, parentPos);
-            return;
+            RemoveFromLeaf(key, parents, node);
+            return true;
         }
         else
         {
-            parent = node;
+            parents.Add(node);
             BNode next = _mem[ el.Links[0] ];
             while (!next.IsLeaf)
             {
-                parent = next;
+                parents.Add(next);
                 next = _mem[next[next.LastIndex()]!.Links[1]];
             }
             Swap(el, next[next.LastIndex()]!);
 
-            int parentPos = BinaryFindWithoutNull(parent, el.Key);
-            RemoveFromLeaf(next[next.LastIndex()]!.Key, parent, next, parentPos);
+            RemoveFromLeaf(next[next.LastIndex()]!.Key, parents, next);
         }
+
+        return true;
     }
-    private void RemoveFromLeaf(AData key, BNode parent, BNode node, int pos)
+    private void RemoveFromLeaf(AData key, List<BNode> parents, BNode node)
     {
-        if(node == this._root)
+        var parent = parents.Last();
+
+        if(node == this._root!)
         {
             node.Remove(key);
             Update(node);
         }
-        else if (node != this._root && node.Count >= node.Min + 1)
+        else if (node != this._root! && node.Count >= node.Min + 1)
         {
             node.Remove(key);
             Update(node);
         }
         else
         {
-            if (_mem[parent[pos]!.Links[0]] == node)
-            {
-                if (_mem[parent[pos]!.Links[1]].Count > parent.Min)
-                    RotateLeft(key, parent, node, pos);
-                else if (pos > 0 && _mem[parent[pos - 1]!.Links[0]].Count > parent.Min)
-                    RotateRight(key, parent, node, pos - 1);
-                else
-                {
-                    Merge(parent, node);
-                    node.Remove(key);
-                    Update(node);
-                }
-            }
-            else
-            {
-                if (_mem[parent[pos]!.Links[0]].Count > parent.Min)
-                    RotateRight(key, parent, node, pos);
-                else
-                {
-                    Merge(parent, node);
-                    node.Remove(key);
-                    Update(node);
-                }
-            }
+            if (node.Count > node.Min)
+                return;
+
+            if (!Rotate(parent, node))
+                Merge(parent, node);
+
+            node.Remove(key);
+
+            if (parent.Count < parent.Min)
+                FixUp(parents, node);
+
+            Update(node);
+            Update(parent);
         }
     }
-    private void RotateLeft(AData key, BNode parent, BNode node, int pos)
-    {
-        Element el = parent[pos]!;
 
-        if (el.Links[1] < 0)
+    private void FixUp(List<BNode> parents, BNode node)
+    {
+        if(parents.Count == 1 && parents.First().Count == 0)
+        {
+            node.isRoot = true;
+            parents.First().isRoot = false;
+            Remove(parents.First());
+
+            Update(node);
+            Update(parents.First());
             return;
+        }
 
-        BNode right = _mem[el.Links[1]];
+        for (int i = parents.Count - 1; i > 0 ; i--)
+        {
+            if (parents[i].Count > parents[i].Min)
+                return;
 
-        var clone = (Element)el.Clone();
-        clone.Links[0] = -1;
-        clone.Links[1] = -1;
-        node.Add(clone);
+            if (!Rotate(parents[i - 1], parents[i]))
+                Merge(parents[i - 1], parents[i]);
 
-        Swap(parent[pos]!, right[0]!);
-        right.Remove(0);
+            if(parents[i - 1].isRoot && parents[i - 1].Count == 0)
+            {
+                parents[i].isRoot = true;
+                parents[i - 1].isRoot = false;
+                Remove(parents[i - 1]);
+            }
 
-        node.Remove(key);
+            Update(parents[i - 1]);
+            Update(parents[i]);
+        }
 
-        Update(node);
-        Update(right);
-        Update(parent);
-    }
-    private void RotateRight(AData key, BNode parent, BNode node, int pos)
-    {
-        Element el = parent[pos]!;
-
-        if (el.Links[0] < 0)
-            return;
-
-        BNode left = _mem[el.Links[0]];
-
-        var clone = (Element)el.Clone();
-        clone.Links[0] = -1;
-        clone.Links[1] = -1;
-        node.Add(clone);
-
-        Swap(parent[pos]!, left[left.LastIndex()]!);
-        left.Remove(left.LastIndex());
-
-        node.Remove(key);
-
-        Update(node);
-        Update(left);
-        Update(parent);
-    }
-    private int BinaryFindWithoutNull(BNode node, AData key)
-    {
-        int pos = node.BinaryFind(key);
-        if (node[pos] is null && pos != 0)
-            --pos;
-        return pos;
-    }
-    private void Swap(Element el1, Element el2)
-    {
-        var tempKey = el1.Key;
-        el1.Key = el2.Key;
-        el2.Key = tempKey;
-
-        var tempVal = el1.Value;
-        el1.Value = el2.Value;
-        el2.Value = tempVal;
     }
 
     public class Enumerator : IEnumerator

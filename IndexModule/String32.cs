@@ -8,7 +8,8 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 namespace IndexModule;
 public class String32() : AData
 {
-    public override int Size => 32;
+    public override int Size => ToByteArray().Length;
+    public const int InternalSize = 32;
     public string Value { get; set; } = string.Empty;
     public String32(string value) : this()
     {
@@ -28,7 +29,7 @@ public class String32() : AData
         byte[] data = Encoding.UTF8.GetBytes(Value);
         writer.Write(data.Length);
         writer.Flush();
-        Array.Resize(ref data, this.Size);
+        Array.Resize(ref data, InternalSize);
         writer.Write(data);
         writer.Flush();
         return stream.ToArray();

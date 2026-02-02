@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace IndexModule;
-public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
+public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serialilzable
 {
     private FileStream _stream;
 
@@ -34,7 +34,7 @@ public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
     public FileIndex(string path, int blockSize)
     {
         _blockSize = blockSize;
-        _stream = new FileStream(path,FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        _stream = new FileStream(path,FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
         _writer = new BinaryWriter(_stream);
         _reader = new BinaryReader(_stream);
         if (_stream.Length == 0)
@@ -76,6 +76,7 @@ public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
 
         Set(index, item);
         ++_count;
+        SaveCount();
     }
 
     public void RemoveAt(int index)
@@ -88,6 +89,7 @@ public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
 
         --_count;
         Cut(_count);
+        SaveCount();
     }
 
     private void Cut(int newSize)
@@ -97,6 +99,7 @@ public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
     public void Add(T item)
     {
         Set(_count++, item);
+        SaveCount();
     }
 
     public void Clear()
@@ -124,6 +127,13 @@ public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
             return false;
         RemoveAt(pos);
         return true;
+    }
+
+    private void SaveCount()
+    {
+        _stream.Seek(0, SeekOrigin.Begin);
+        _writer.Write(_count);
+        _writer.Flush();
     }
 
     public void Update(T item)
@@ -174,5 +184,13 @@ public class FileIndex<T> : Updatable<T>, IList<T> where T : Serialilzable
     IEnumerator IEnumerable.GetEnumerator()
     {
         return GetEnumerator();
+    }
+
+    public void Dispose()
+    {
+        this._writer.Flush();
+        this._writer.Close();
+        this._reader.Close();
+        this._stream.Close();
     }
 }

@@ -8,41 +8,73 @@ using System.Text;
 using System.Threading.Tasks;
 using Serilog;
 using Serilog.Core;
+using Ureg;
 using static ProxyModule.ISettings;
 using static SocksModule.SocksContext;
 
 namespace ProxyModule;
-public class ProxySettings : ISettings
+public class ProxySettings : ISettings, IDisposable
 {
     private string _proxyCrtPath = string.Empty;
+
     private string _proxyCrtPasswd = string.Empty;
+
     private bool _isTlsProxy = false;
+
     private bool _authEnable = false;
+
     private IPEndPoint? _internalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:1080");
+
     private IPEndPoint? _externalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:1080");
+
     private IPEndPoint? _socksExternalBindEndPoint;
+
     private IPEndPoint? _socksExternalUdpEndPoint;
+
     private string[] _allowAddrTypes = { "domain", "ipv4", "ipv6" };
+
     private string[] _socksAllowCommand = { "connect" };
+
     private string _pathToRuleFile = string.Empty;
+
     private string _pathToAuthFile = string.Empty;
+
     private int _defaultHttpPort = 80;
+
     private int _maxUserConnection = 4;
+
     private RuleManager? _ruleManager = null;
+
+    private Methods? _authIndex = null;
+
     public string ProxyCrtPath => _proxyCrtPath;
+
     public string ProxyCrtPasswd => _proxyCrtPasswd;
+
     public bool IsTlsProxy => _isTlsProxy;
+
     public bool AuthEnable => _authEnable;
+
     public IPEndPoint InternalTcpEndPoint => _internalTcpEndPoint!;
+
     public IPEndPoint ExternalTcpEndPoint => _externalTcpEndPoint!;
+
     public IPEndPoint SocksExternalBindEndPoint => _socksExternalBindEndPoint!;
+
     public IPEndPoint SocksExternalUdpEndPoint => _socksExternalUdpEndPoint!;
+
     public int DefaultHttpPort => _defaultHttpPort;
+
     public int MaxUserConnection => _maxUserConnection;
+
     public Logger? _logger;
+
     public Logger? Logger => _logger;
+
     public bool SocksCheckAllowCommand(ConnectType type) => _socksAllowCommand!.Contains(type.ToString().ToLower());
+
     public bool CheckAllowAddrType(string type) => _allowAddrTypes!.Contains(type.ToLower());
+
     public bool CheckRule(RuleManager.RuleInfo info)
     {
         if(_ruleManager is null)
@@ -51,13 +83,27 @@ public class ProxySettings : ISettings
         }
         return _ruleManager.Check(info);
     }
+
     public string? GetPassword(string userName)
     {
-        return "pass";
+        if (_authIndex is null)
+            return null;
+        try
+        {
+            return _authIndex.Search(userName);
+        }
+        catch (Exception ex)
+        {
+            if (Logger is not null)
+                Logger.Error(ex.Message);
+            return null;
+        }
     }
 
     private readonly string _settingsPath = string.Empty;
+
     private FileSystemWatcher _watcher = new FileSystemWatcher();
+
     public ProxySettings(string path)
     {
         this._settingsPath = path;
@@ -115,6 +161,9 @@ public class ProxySettings : ISettings
         {
             if (_pathToRuleFile != string.Empty)
                 this._ruleManager = new RuleManager(_pathToRuleFile);
+
+            if(_pathToAuthFile != string.Empty)
+                this._authIndex = new Methods(_pathToAuthFile);
         }
         catch
         {
@@ -127,7 +176,7 @@ public class ProxySettings : ISettings
     {
         if (this.IsTlsProxy && (this._proxyCrtPath == string.Empty || this._proxyCrtPasswd == string.Empty))
             throw new SettingsException("Certificate or password is missing");
-        if (this.AuthEnable && this._pathToAuthFile == string.Empty)
+        if (this.AuthEnable && this._pathToAuthFile == string.Empty && Path.GetExtension(this._pathToAuthFile).Equals("index"))
             throw new SettingsException("The path to the authentication file is missing");
         if (this.SocksCheckAllowCommand(ConnectType.BIND) && this._socksExternalBindEndPoint is null)
             throw new SettingsException("Bind connection address missing");
@@ -148,6 +197,12 @@ public class ProxySettings : ISettings
             return IPEndPoint.Parse($"{hostPort[0]}:{hostPort[1]}");
         }
     }
+
+    public void Dispose()
+    {
+        this._authIndex?.Dispose();
+    }
+
     public class SettingsException : ApplicationException
     {
         public SettingsException(string msg) : base(msg) { }

@@ -16,7 +16,7 @@ public class BNode : Serialilzable
     public int T { get; private set; }
     private Element?[] _values;
     public int Count { get; private set; } = 0;
-    public int Address { get; private set; } = 0;
+    public int Address { get; set; } = 0;
     public int Size => this.ToByteArray().Length;
     public (Types key, Types value) Types { get; private set; }
 

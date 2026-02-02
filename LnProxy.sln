@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestModule", "TestModule\Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IndexModule", "IndexModule\IndexModule.csproj", "{C752E87B-2CAD-4511-90E1-7C6F0DD43835}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ureg", "Ureg\Ureg.csproj", "{3E072F71-A982-40EA-8DC8-58AECCE0E60B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{C752E87B-2CAD-4511-90E1-7C6F0DD43835}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C752E87B-2CAD-4511-90E1-7C6F0DD43835}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C752E87B-2CAD-4511-90E1-7C6F0DD43835}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3E072F71-A982-40EA-8DC8-58AECCE0E60B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3E072F71-A982-40EA-8DC8-58AECCE0E60B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3E072F71-A982-40EA-8DC8-58AECCE0E60B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3E072F71-A982-40EA-8DC8-58AECCE0E60B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

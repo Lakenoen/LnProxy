@@ -23,6 +23,7 @@ public class Program
             Proxy server = new Proxy(settings);
             settings.Changed += () =>
             {
+                settings.Dispose();
                 settings = new ProxySettings("Settings.txt");
                 fatalLogger.Information("Settings changed");
                 server.Dispose();
@@ -79,6 +80,7 @@ class Worker : BackgroundService
             });
             settings.Changed += () =>
             {
+                settings.Dispose();
                 settings = new ProxySettings("Settings.txt");
                 fatalLogger.Information("Settings changed");
                 server.Dispose();
@@ -90,6 +92,8 @@ class Worker : BackgroundService
                 server = new Proxy(settings);
                 await server.StartAsync();
             } while (!stoppingToken.IsCancellationRequested);
+
+            settings.Dispose();
         }
         catch (OperationCanceledException)
         {

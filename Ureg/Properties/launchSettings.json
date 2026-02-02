@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Ureg": {
+      "commandName": "Project",
+      "commandLineArgs": "help"
+    }
+  }
+}

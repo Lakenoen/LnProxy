@@ -242,6 +242,14 @@ namespace TestModule
                 Assert.NotNull(val);
                 Assert.Equal(val.Value, key.ToString());
             }
+
+            var exept = Record.Exception(() =>
+            {
+                foreach (int key in data)
+                    index.Remove((Integer)key);
+            });
+
+            Assert.Null(exept);
         }
 
         [Fact]
@@ -263,6 +271,8 @@ namespace TestModule
             file[1] = node2;
 
             nodeClone = file[1];
+
+            file.Dispose();
         }
     }
 }
