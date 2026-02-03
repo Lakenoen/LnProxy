@@ -288,6 +288,7 @@ public class Proxy : IDisposable
         {
             var context = new SocksContext()
             {
+                AuthEnabled = _settings.AuthEnable,
                 ServerTcpEndPoint = _settings.ExternalTcpEndPoint,
                 BindServerEndPoint = _settings.SocksExternalBindEndPoint,
                 ServerUdpEndPoint = _settings.SocksExternalUdpEndPoint,
@@ -521,15 +522,25 @@ public class Proxy : IDisposable
         {
             if (proxyContext.Auth is null)
             {
-                proxyContext.Auth = new DigestAuth(_settings.GetPassword, proxyContext, this, client);
-                var authResp = proxyContext.Auth.Next(req) as HttpResponce;
-                string s = authResp!.ToString();
-                await client.WriteAsync(authResp!.ToByteArray());
+                proxyContext.Auth = this._settings.MakeAuth(_settings.GetPassword, proxyContext, this, client);
+                var resp = proxyContext.Auth.Next(req);
+
+                if (resp is HttpResponce authResp)
+                    await client.WriteAsync(authResp!.ToByteArray());
+                else if(resp is Ref<bool> result)
+                    return result;
+                    
                 return false;
             }
             else if (!proxyContext.Auth.IsEnd())
             {
-                return proxyContext.Auth.Next(req) as Ref<bool>;
+                var resp = proxyContext.Auth.Next(req);
+
+                switch (resp)
+                {
+                    case bool result: return result;
+                    default: return false;
+                }
             }
             return true;
         }
@@ -826,12 +837,12 @@ public class Proxy : IDisposable
         SOCKS,
     }
 
-    internal class ProxyClientContext()
+    public class ProxyClientContext()
     {
         public TcpTunnel? TcpTunnel { get; set; } = null;
         public UdpTunnel? UdpTunnel { get; set; } = null;
         public SocksProtocol? SocksProtocol { get; set; } = null;
-        public DigestAuth? Auth { get; set; } = null;
+        public IAuth? Auth { get; set; } = null;
         public string? Username { get; set; } = null;
     }
 

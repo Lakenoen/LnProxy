@@ -12,3 +12,4 @@ AllowAddressTypes: IPv4 IPv6 Domain
 SocksAllowCommand: CONNECT BIND UDP
 AuthPath: Users.index
 RulePath: Rule.txt
+HttpAuthType: Digest

@@ -41,19 +41,24 @@ public partial class SocksContext
                 {
                     short priority = req.Methods[i] switch
                     {
-                        0x0 => 1,
-                        0x2 => 2,
+                        0x0 => 2,
+                        0x2 => 1,
                         _ => throw new SocksMethodNotSupported()
                     };
                     methods.Enqueue(req.Methods[i], priority);
                 }
 
-                switch (methods.Peek()) {
-                    case 0x2: InsertNode(_current, new Node(PasswordAuth, "PasswordAuth"));break;
+                Context.Method = methods.Peek();
+
+                if (Context.Method.Equals(0x0) && Context.AuthEnabled)
+                    throw new SocksMethodNotSupported();
+
+                switch (Context.Method)
+                {
+                    case 0x2: InsertNode(_current, new Node(PasswordAuth, "PasswordAuth")); break;
                 }
 
-                Context.Method = methods.Peek();
-                var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = methods.Peek() };
+                var resp = new TcpGreetingServerResponce { Ver = req.Ver, Method = Context.Method };
                 return resp.ToByteArray();
             }
             catch (SocksMethodNotSupported e)

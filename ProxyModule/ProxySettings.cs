@@ -6,6 +6,7 @@ using System.Net;
 using System.Runtime;
 using System.Text;
 using System.Threading.Tasks;
+using NetworkModule;
 using Serilog;
 using Serilog.Core;
 using Ureg;
@@ -15,6 +16,12 @@ using static SocksModule.SocksContext;
 namespace ProxyModule;
 public class ProxySettings : ISettings, IDisposable
 {
+    private static List<string> _httpAuthAllowed = new List<string>()
+    {
+        "basic",
+        "digest"
+    };
+
     private string _proxyCrtPath = string.Empty;
 
     private string _proxyCrtPasswd = string.Empty;
@@ -22,6 +29,8 @@ public class ProxySettings : ISettings, IDisposable
     private bool _isTlsProxy = false;
 
     private bool _authEnable = false;
+
+    private string _httpAuthType = "Basic";
 
     private IPEndPoint? _internalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:1080");
 
@@ -52,6 +61,8 @@ public class ProxySettings : ISettings, IDisposable
     public string ProxyCrtPasswd => _proxyCrtPasswd;
 
     public bool IsTlsProxy => _isTlsProxy;
+
+    public string HttpAuthType => _httpAuthType;
 
     public bool AuthEnable => _authEnable;
 
@@ -150,6 +161,7 @@ public class ProxySettings : ISettings, IDisposable
                 case "SocksAllowCommand": _socksAllowCommand = keyValue[1].Split(' ', ',').Select((el, i) => el.ToLower().Trim()).ToArray(); break;
                 case "RulePath": _pathToRuleFile = keyValue[1].Trim(); break;
                 case "AuthPath": _pathToAuthFile = keyValue[1].Trim(); break;
+                case "HttpAuthType": _httpAuthType = keyValue[1].Trim().ToLower(); break;
             }
         }
         Directory.CreateDirectory("log");
@@ -176,12 +188,16 @@ public class ProxySettings : ISettings, IDisposable
     {
         if (this.IsTlsProxy && (this._proxyCrtPath == string.Empty || this._proxyCrtPasswd == string.Empty))
             throw new SettingsException("Certificate or password is missing");
-        if (this.AuthEnable && this._pathToAuthFile == string.Empty && Path.GetExtension(this._pathToAuthFile).Equals("index"))
+        if (this.AuthEnable && this._pathToAuthFile == string.Empty)
             throw new SettingsException("The path to the authentication file is missing");
+        if (this.AuthEnable && !Path.GetExtension(this._pathToAuthFile).Equals(".index"))
+            throw new SettingsException("The authentication file extension must be a .index");
         if (this.SocksCheckAllowCommand(ConnectType.BIND) && this._socksExternalBindEndPoint is null)
             throw new SettingsException("Bind connection address missing");
         if (this.SocksCheckAllowCommand(ConnectType.UDP) && this._socksExternalUdpEndPoint is null)
             throw new SettingsException("Bind connection address missing");
+        if(this.AuthEnable && !_httpAuthAllowed.Contains(this._httpAuthType))
+            throw new SettingsException("Bad http authentification type");
     }
     private IPEndPoint GetEndPointFromString(string source)
     {
@@ -198,6 +214,20 @@ public class ProxySettings : ISettings, IDisposable
         }
     }
 
+    public IAuth MakeAuth(
+        Func<string, string?> getPasswd,
+        Proxy.ProxyClientContext context,
+        Proxy proxy,
+        TcpClientWrapper client
+        )
+    {
+        return this._httpAuthType switch
+        {
+            "basic" => new BasicAuth(getPasswd, context, proxy, client),
+            "digest" => new DigestAuth(getPasswd, context, proxy, client),
+            _ => throw new SettingsException("Bad http authentification type")
+        };
+    }
     public void Dispose()
     {
         this._authIndex?.Dispose();

@@ -9,6 +9,7 @@ namespace SocksModule;
 
 public partial class SocksContext
 {
+    public bool AuthEnabled { get; set; } = false;
     public Exception? Error { get; set; } = null;
     public Predicate<PasswordAuthClientRequest>? CheckAuth { get; set; } = null;
     public Predicate<byte>? CheckAddrType { get; set; } = null;
@@ -90,14 +91,19 @@ public partial class SocksContext
             res.Smd = (ConnectType)data[1];
             res.Rsv = data[2];
             res.Atyp = (Atyp)data[3];
-            byte len = data[4];
-            res.DstAddr = new byte[len];
-            byte shift = sizeof(byte) * 4;
-            for (byte i = 0; i < len; i++)
+            byte shift = (res.Atyp == Atyp.Domain) ? (byte)5 : (byte)4;
+
+            if(res.Atyp == Atyp.Domain)
+                res.DstAddr = new byte[data[4]];
+            else
+                res.DstAddr = new byte[data.Length - shift - sizeof(short)];
+
+            for (byte i = 0; i < res.DstAddr!.Length; i++)
             {
-                res.DstAddr[i] = data[i + shift + 1];
+                res.DstAddr[i] = data[i + shift];
             }
-            var portSpan = data.AsSpan(res.DstAddr.Length + shift + 1, sizeof(short));
+
+            var portSpan = data.AsSpan(res.DstAddr.Length + shift, sizeof(short));
             portSpan.Reverse();
             res.DstPort = BitConverter.ToUInt16(portSpan);
             return res;

@@ -10,16 +10,17 @@ using NetworkModule;
 
 namespace ProxyModule
 {
-    internal class DigestAuth
+    public class DigestAuth : IAuth
     {
-        public string Nonce { get; private set; } = string.Empty;
-        public string Opaque { get; init; } = Convert.ToBase64String(Encoding.UTF8.GetBytes("LnProxySession"));
-        public string Realm { get; init; } = "LnProxy";
-        private Stack<Func<HttpRequest, object>> stack = new();
-        private Func<string, string?> _getPasswd;
-        private readonly Proxy.ProxyClientContext _context;
-        private readonly Proxy _parentProxy;
-        private readonly TcpClientWrapper _client;
+        private string Nonce { get; set; } = string.Empty;
+        private string Opaque { get; init; } = Convert.ToBase64String(Encoding.UTF8.GetBytes("LnProxySession"));
+        private string Realm { get; init; } = "LnProxy";
+
+        protected Stack<Func<HttpRequest, object?>> stack = new();
+        protected Func<string, string?> _getPasswd;
+        protected readonly Proxy.ProxyClientContext _context;
+        protected readonly Proxy _parentProxy;
+        protected readonly TcpClientWrapper _client;
         public DigestAuth(
             Func<string, string?> getPasswd,
             Proxy.ProxyClientContext context,
@@ -31,10 +32,10 @@ namespace ProxyModule
             this._context = context;
             this.Nonce = MakeNonce();
             this._getPasswd = getPasswd;
-            stack.Push(CheckValid);
-            stack.Push(InitAuth);
+            stack.Push(Valid);
+            stack.Push(Init);
         }
-        private HttpResponce InitAuth(HttpRequest req)
+        public virtual object? Init(HttpRequest req)
         {
             var res = HttpServerResponses.Authentication.Clone() as HttpResponce;
             if (req.Headers.ContainsKey("Proxy-Authorization"))
@@ -55,7 +56,7 @@ namespace ProxyModule
             }
             return res;
         }
-        private Ref<bool> CheckValid(HttpRequest req)
+        public virtual object? Valid(HttpRequest req)
         {
             var parameters = ParseDigestHeader(req);
 

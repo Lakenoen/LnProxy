@@ -2,7 +2,7 @@
   "profiles": {
     "Ureg": {
       "commandName": "Project",
-      "commandLineArgs": "help"
+      "commandLineArgs": "all"
     }
   }
 }
