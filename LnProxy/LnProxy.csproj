@@ -16,9 +16,6 @@
   </ItemGroup>
 
 	<ItemGroup>
-		<Content Include="Auth.txt">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</Content>
 		<Content Include="Rule.txt">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
