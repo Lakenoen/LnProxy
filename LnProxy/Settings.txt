@@ -10,5 +10,5 @@ SocksExternalBindAddress: 192.168.0.103 8889
 SocksExternalUdpAddress: 192.168.0.103 8890
 AllowAddressTypes: IPv4 IPv6 Domain
 SocksAllowCommand: CONNECT BIND UDP
-AuthPath: Auth.txt
+AuthPath: Users.index
 RulePath: Rule.txt
