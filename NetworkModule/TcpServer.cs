@@ -11,11 +11,11 @@ namespace NetworkModule;
 public class TcpServer : AStartableAsync, IDisposable
 {
     private TcpListener _listener;
-    private ConcurrentDictionary<TcpClientWrapper, ClientInfo> _clients = new ConcurrentDictionary<TcpClientWrapper, ClientInfo>();
+    private WaitableDict<TcpClientWrapper, ClientInfo> _clients = new WaitableDict<TcpClientWrapper, ClientInfo>();
     public IPEndPoint EndPoint { get; init; }
-    public FrozenDictionary<TcpClientWrapper, ClientInfo> Clients
+    public WaitableDict<TcpClientWrapper, ClientInfo> Clients
     {
-        get => _clients.ToFrozenDictionary();
+        get => _clients;
     }
     public TcpServer(IPEndPoint endPoint) : base()
     {
@@ -100,7 +100,7 @@ public class TcpServer : AStartableAsync, IDisposable
 
             CancellationTokenSource clientCancel = new CancellationTokenSource();
             var readTask = Read(wrapper, clientCancel.Token);
-            _clients.TryAdd(wrapper, new ClientInfo(wrapper, DateTime.Now, clientCancel, readTask));
+            _clients.Add(wrapper, new ClientInfo(wrapper, DateTime.Now, clientCancel, readTask));
         }
     }
 

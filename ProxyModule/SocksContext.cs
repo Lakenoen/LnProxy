@@ -18,14 +18,17 @@ public partial class SocksContext
     public byte Ver { get; private set; } = 0x5;
     public ConnectType ConnectionType { get; private set; } = ConnectType.CONNECT;
     public IPEndPoint? ServerTcpEndPoint {  get; set; }
-    public IPEndPoint? ServerUdpEndPoint { get; set; }
+    public IPAddress? ServerUdpAddress { get; set; }
     public IPEndPoint? BindServerEndPoint {  get; set; }
     public TcpServer? BindServer { get; set; }
     public string TargetAddress { get; private set; } = string.Empty;
     public int TargetPort { get; private set; }
     public Atyp TargetType {  get; private set; }
     public byte Method { get; private set; }
-    
+
+    public static int IpV6Size = 16;
+    public static int IpV4Size = 4;
+    public static short PortSize = 2;
     public class TcpGreetingClientRequest
     {
         public byte Ver { get; set; } = 0;
@@ -112,14 +115,19 @@ public partial class SocksContext
         {
             using MemoryStream stream = new MemoryStream();
             using BinaryWriter writer = new BinaryWriter(stream);
+
             var port = BitConverter.GetBytes(DstPort).AsSpan();
             port.Reverse();
+
             writer.Write(Ver);
             writer.Write((byte)Smd);
             writer.Write(Rsv);
             writer.Write((byte)Atyp);
-            writer.Write((byte)DstAddr!.Length);
-            writer.Write(DstAddr);
+
+            if(this.Atyp == Atyp.Domain)
+                writer.Write((byte)DstAddr!.Length);
+
+            writer.Write(DstAddr!);
             writer.Write(port);
             writer.Flush();
             return stream.ToArray();
@@ -143,13 +151,20 @@ public partial class SocksContext
             res.Rep = data[1];
             res.Rsv = data[2];
             res.Atyp = (Atyp)data[3];
-            byte shift = sizeof(byte) * 4;
-            res.BndAddr = new byte[data.Length - sizeof(short) - shift];
-            for (byte i = shift; i < data.Length - sizeof(short); i++)
+
+            byte shift = (res.Atyp == Atyp.Domain) ? (byte)5 : (byte)4;
+
+            if (res.Atyp == Atyp.Domain)
+                res.BndAddr = new byte[data[4]];
+            else
+                res.BndAddr = new byte[data.Length - shift - sizeof(short)];
+
+            for (byte i = 0; i < res.BndAddr.Length; i++)
             {
-                res.BndAddr[i - shift] = data[i];
+                res.BndAddr[i] = data[i + shift];
             }
-            var portSpan = data.AsSpan(res.BndAddr.Count() + shift, sizeof(short));
+
+            var portSpan = data.AsSpan(res.BndAddr.Length + shift, sizeof(short));
             portSpan.Reverse();
             res.BndPort = BitConverter.ToUInt16(portSpan);
             return res;
@@ -158,12 +173,18 @@ public partial class SocksContext
         {
             using MemoryStream stream = new MemoryStream();
             using BinaryWriter writer = new BinaryWriter(stream);
+
             var port = BitConverter.GetBytes(BndPort).AsSpan();
             port.Reverse();
+
             writer.Write(Ver);
             writer.Write(Rep);
             writer.Write(Rsv);
             writer.Write((byte)Atyp);
+
+            if (this.Atyp == Atyp.Domain)
+                writer.Write((byte)BndAddr!.Length);
+
             writer.Write(BndAddr!);
             writer.Write(port);
             writer.Flush();
@@ -244,25 +265,29 @@ public partial class SocksContext
             UdpPacket res = new();
             res.Frag = data[2];
             res.Atyp_ = (Atyp)data[3];
-            byte len = data[4];
-            res.DstAddr = new byte[len];
-            byte shift = sizeof(byte) * 5;
 
-            for (byte i = 0; i < len; i++)
+            byte shift = (res.Atyp_ == Atyp.Domain) ? (byte)5 : (byte)4;
+
+            if (res.Atyp_ == Atyp.Domain)
+                res.DstAddr = new byte[data[4]];
+            else if (res.Atyp_ == Atyp.IpV6)
+                res.DstAddr = new byte[IpV6Size];
+            else
+                res.DstAddr = new byte[IpV4Size];
+
+            for (byte i = 0; i < res.DstAddr.Length; i++)
             {
                 res.DstAddr[i] = data[i + shift];
             }
 
-            var portSpan = data.AsSpan(res.DstAddr.Length + shift, sizeof(short));
+            var portSpan = data.AsSpan(res.DstAddr.Length + shift, PortSize);
             portSpan.Reverse();
             res.DstPort = BitConverter.ToUInt16(portSpan);
 
-            var dataSizeSpan = data.AsSpan(res.DstAddr.Length + shift + sizeof(short), sizeof(short));
-            short dataSize = (short)BitConverter.ToInt16(dataSizeSpan);
-            res.Data = new byte[dataSize];
-            for(int i = 0; i < dataSize; i++)
+            res.Data = new byte[data.Length - res.DstAddr.Length - shift - PortSize];
+            for(int i = 0; i < res.Data.Length; i++)
             {
-                res.Data[i] = data[i + res.DstAddr.Length + shift + sizeof(short) * 2];
+                res.Data[i] = data[i + res.DstAddr.Length + shift + PortSize];
             }
 
             return res;
@@ -276,11 +301,13 @@ public partial class SocksContext
             writer.Write(this.Rsv);
             writer.Write(this.Frag);
             writer.Write((byte)this.Atyp_);
-            writer.Write((byte)this.DstAddr!.Length);
-            writer.Write(this.DstAddr);
+
+            if (this.Atyp_ == Atyp.Domain)
+                writer.Write((byte)DstAddr!.Length);
+
+            writer.Write(this.DstAddr!);
             writer.Write(port);
-            writer.Write((short)Data!.Length);
-            writer.Write(this.Data);
+            writer.Write(this.Data!);
             writer.Flush();
             return stream.ToArray();
         }

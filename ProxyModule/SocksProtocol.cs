@@ -148,14 +148,14 @@ public partial class SocksContext
 
         private byte[] HandleUdp(TcpConnectionClientRequest req)
         {
-            var Atyp_ = Context.ServerUdpEndPoint!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
+            var Atyp_ = Context.ServerUdpAddress!.AddressFamily.Equals(AddressFamily.InterNetwork) ? Atyp.IpV4 : Atyp.IpV6;
             var resp = new TcpConnectionServerResponse()
             {
                 Ver = req.Ver,
                 Rep = (byte)RepType.SUCCESS,
                 Atyp = Atyp_,
-                BndAddr = Context.ServerUdpEndPoint.Address.GetAddressBytes(),
-                BndPort = (ushort)Context.ServerUdpEndPoint.Port,
+                BndAddr = Context.ServerUdpAddress!.GetAddressBytes(),
+                BndPort = (ushort)0,
             };
             Context.ConnectionType = ConnectType.UDP;
             EndInit?.Invoke(Context, resp);

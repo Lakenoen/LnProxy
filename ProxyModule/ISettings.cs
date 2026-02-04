@@ -24,7 +24,7 @@ public interface ISettings
     public IPEndPoint InternalTcpEndPoint { get; }
     public IPEndPoint ExternalTcpEndPoint { get; }
     public IPEndPoint SocksExternalBindEndPoint { get; }
-    public IPEndPoint SocksExternalUdpEndPoint { get; }
+    public IPAddress SocksExternalUdpAddress { get; }
     public bool SocksCheckAllowCommand(ConnectType type);
     public bool CheckAllowAddrType(string type);
     public bool CheckRule(RuleManager.RuleInfo info);

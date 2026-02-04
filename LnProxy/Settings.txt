@@ -1,13 +1,13 @@
 ﻿ProxyCertPath: ../../../../../proxy.pfx
 ProxyCertPasswd: pass1
-EnableTls: true
+EnableTls: false
 EnableAuth: true
 DefaultHttpPort: 80
 MaxUserConnection: 3
 ExternalTcpAddress: 192.168.0.103 1080
 InternalTcpAddress: 0.0.0.0 1080
 SocksExternalBindAddress: 192.168.0.103 8889
-SocksExternalUdpAddress: 192.168.0.103 8890
+SocksExternalUdpAddress: 192.168.0.103
 AllowAddressTypes: IPv4 IPv6 Domain
 SocksAllowCommand: CONNECT BIND UDP
 AuthPath: Users.index

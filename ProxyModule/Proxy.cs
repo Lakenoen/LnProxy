@@ -24,8 +24,9 @@ namespace ProxyModule;
 public class Proxy : IDisposable
 {
     private X509Certificate2? _proxyCert { get; init; }
-    private ConcurrentDictionary<IPEndPoint, ProxyClientContext> _context = new();
-    private ConcurrentDictionary<string, HashSet<IPAddress>> _users = new();
+    private WaitableDict<IPEndPoint, ProxyClientContext> _context = new();
+    private WaitableDict<string, HashSet<IPAddress>> _users = new();
+
     private readonly TcpServer _server;
     private readonly ISettings _settings;
     private readonly Logger _logger;
@@ -54,6 +55,7 @@ public class Proxy : IDisposable
                 _logger.Error("Invalid proxy certificate");
         }
     }
+
     internal void RemoveUserConnection(string username, TcpClientWrapper client)
     {
         try
@@ -62,7 +64,7 @@ public class Proxy : IDisposable
             {
                 if (users.Count == 0)
                 {
-                    _users.Remove(username, out _);
+                    _users.TryRemove(username, out _);
                     return;
                 }
                 users.Remove(client.EndPoint!.Address);
@@ -70,7 +72,7 @@ public class Proxy : IDisposable
         }
         catch
         {
-            _users.Remove(username, out _);
+            _users.TryRemove(username, out _);
         }
     }
     internal bool AddUserConnectionIfNeeded(string username, TcpClientWrapper client)
@@ -87,7 +89,7 @@ public class Proxy : IDisposable
             {
                 var userConnections = new HashSet<IPAddress>();
                 userConnections.Add(client.EndPoint!.Address);
-                _users.TryAdd(username, userConnections);
+                _users.Add(username, userConnections);
             }
 
             _logger.Information("Authorization success client: {@Client} username: {@User}"
@@ -134,12 +136,14 @@ public class Proxy : IDisposable
     public async Task StartAsync()
     {
         _logger.Information("Starting proxy server {@Address}", _server.EndPoint.ToString());
+
         await _server.StartAsync();
     }
 
     public async Task StopAsync()
     {
         _logger.Information("Stopping proxy server {@Address}", _server.EndPoint.ToString());
+
         await _server.StopAsync();
     }
 
@@ -150,7 +154,7 @@ public class Proxy : IDisposable
             if (client is null || client.EndPoint is null)
                 return;
 
-            if (_context!.Remove(client.EndPoint, out var context))
+            if (_context!.TryRemove(client.EndPoint, out var context))
             {
                 _logger.Error("{@Msg} client: {@Client} username: {@User}"
                 , ex.Message
@@ -158,17 +162,17 @@ public class Proxy : IDisposable
                 , context.Username);
 
                 var TcpTask = context.TcpTunnel?.StopAsync();
-                var UdpTask = context.UdpTunnel?.StopAsync();
+                var UdpTask = context.UdpRedirector?.StopAsync();
 
                 if(TcpTask != null)
                     await TcpTask;
 
-                if (UdpTask != null)
+                if(UdpTask != null)
                     await UdpTask;
 
                 context.SocksProtocol?.Context?.BindServer?.Dispose();
                 context.TcpTunnel?.Dispose();
-                context.UdpTunnel?.Dispose();
+                context.UdpRedirector?.Dispose();
 
                 if (context.Username != null)
                     RemoveUserConnection(context.Username, client);
@@ -186,7 +190,7 @@ public class Proxy : IDisposable
             if (tunnel.Source.EndPoint is null)
                 return;
 
-            if (_context!.Remove(tunnel.Source.EndPoint, out var context))
+            if (_context!.TryRemove(tunnel.Source.EndPoint, out var context))
             {
                 _logger.Error("{@Msg} client: {@Client} username: {@User}"
                 , ex.Message
@@ -194,7 +198,7 @@ public class Proxy : IDisposable
                 , context.Username);
 
                 var TcpTask = context.TcpTunnel?.StopAsync();
-                var UdpTask = context.UdpTunnel?.StopAsync();
+                var UdpTask = context.UdpRedirector?.StopAsync();
 
                 if (TcpTask != null)
                     await TcpTask;
@@ -204,7 +208,7 @@ public class Proxy : IDisposable
 
                 context.SocksProtocol?.Context?.BindServer?.Dispose();
                 context.TcpTunnel?.Dispose();
-                context.UdpTunnel?.Dispose();
+                context.UdpRedirector?.Dispose();
 
                 if (context.Username != null)
                     RemoveUserConnection(context.Username, tunnel.Source);
@@ -222,14 +226,14 @@ public class Proxy : IDisposable
             if (client.EndPoint == null)
                 return;
 
-            if (_context!.Remove(client.EndPoint, out var context))
+            if (_context!.TryRemove(client.EndPoint, out var context))
             {
                 _logger.Information("Disconnect client: {@Client} username: {@User}"
                 , client.EndPoint.ToString()
                 , context.Username);
 
                 var TcpTask = context.TcpTunnel?.StopAsync();
-                var UdpTask = context.UdpTunnel?.StopAsync();
+                var UdpTask = context.UdpRedirector?.StopAsync();
 
                 if (TcpTask != null)
                     await TcpTask;
@@ -239,7 +243,7 @@ public class Proxy : IDisposable
 
                 context.SocksProtocol?.Context?.BindServer?.Dispose();
                 context.TcpTunnel?.Dispose();
-                context.UdpTunnel?.Dispose();
+                context.UdpRedirector?.Dispose();
 
                 if (context.Username != null)
                     RemoveUserConnection(context.Username, client);
@@ -269,7 +273,7 @@ public class Proxy : IDisposable
                 await HandleHttp(client, context, data);
             else
             {
-                if (context.TcpTunnel is not null || context.UdpTunnel is not null)
+                if (context.TcpTunnel is not null || context.UdpRedirector is not null)
                     return;
                 await HandleSocks(client, context, data);
             }
@@ -291,7 +295,7 @@ public class Proxy : IDisposable
                 AuthEnabled = _settings.AuthEnable,
                 ServerTcpEndPoint = _settings.ExternalTcpEndPoint,
                 BindServerEndPoint = _settings.SocksExternalBindEndPoint,
-                ServerUdpEndPoint = _settings.SocksExternalUdpEndPoint,
+                ServerUdpAddress = _settings.SocksExternalUdpAddress,
                 CheckAddrType = b =>
                 {
                     Atyp type = (Atyp)b;
@@ -365,7 +369,9 @@ public class Proxy : IDisposable
                                 ;break;
                             case ConnectType.UDP:
                                 {
-                                    CreateUdpTunnel(targetEndpoint, proxyContext).StartAsync();
+                                    proxyContext.UdpRedirector = new UdpRedirector(client.EndPoint!, 0);
+                                    resp.BndPort = (ushort)proxyContext.UdpRedirector.Port;
+                                    proxyContext.UdpRedirector.Invoke();
 
                                     _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
                                         , client.EndPoint!.ToString()
@@ -388,8 +394,9 @@ public class Proxy : IDisposable
                                 ;break;
                             case ConnectType.UDP:
                                 {
-                                    IPEndPoint sourceUdpEndPoint = new IPEndPoint(entry.AddressList.First(), context.TargetPort);
-                                    CreateUdpTunnel(sourceUdpEndPoint, proxyContext).StartAsync();
+                                    proxyContext.UdpRedirector = new UdpRedirector(client.EndPoint!, 0);
+                                    resp.BndPort = (ushort)proxyContext.UdpRedirector.Port;
+                                    proxyContext.UdpRedirector.Invoke();
                                 }
                                 ;break;
                         }
@@ -497,17 +504,6 @@ public class Proxy : IDisposable
 
         if(protocol is not null && protocol.Context.Error != null)
             client.Disconnect();
-    }
-
-    private IPEndPoint UdpTunnel_OnRecv(SocksContext context,IPEndPoint from, IPEndPoint clientEndPoint, byte[] data)
-    {
-        if ( (from.Address.Equals(clientEndPoint.Address) && clientEndPoint.Port == 0)
-            || from.Equals(clientEndPoint))
-        {
-            var packet = SocksContext.UdpPacket.Parse(data);
-            return new IPEndPoint(new IPAddress(packet.DstAddr), packet.DstPort);
-        }
-        return clientEndPoint;
     }
 
     private async Task<bool> HttpAuth(
@@ -688,7 +684,7 @@ public class Proxy : IDisposable
             if (client.EndPoint is null)
                 return;
 
-            _context.TryAdd(client.EndPoint, new ProxyClientContext());
+            _context.Add(client.EndPoint, new ProxyClientContext());
 
             _logger.Information("Try connection to proxy client: {@Client}", client.EndPoint!.ToString());
 
@@ -736,7 +732,7 @@ public class Proxy : IDisposable
         foreach (var item in _context)
         {
             var TcpTask = item.Value.TcpTunnel?.StopAsync();
-            var UdpTask = item.Value.UdpTunnel?.StopAsync();
+            var UdpTask = item.Value.UdpRedirector?.StopAsync();
 
             if (TcpTask != null)
                 TcpTask.Wait();
@@ -746,20 +742,13 @@ public class Proxy : IDisposable
 
             item.Value.SocksProtocol?.Context?.BindServer?.Dispose();
             item.Value.TcpTunnel?.Dispose();
-            item.Value.UdpTunnel?.Dispose();
+            item.Value.UdpRedirector?.Dispose();
         }
 
         _logger.Dispose();
         _server.Dispose();
     }
-    private UdpTunnel CreateUdpTunnel(IPEndPoint sourceEndPoint, ProxyClientContext proxyContext)
-    {
-        SocksContext context = proxyContext.SocksProtocol!.Context;
-        proxyContext.UdpTunnel = new UdpTunnel(context.ServerUdpEndPoint!.Port);
 
-        proxyContext.UdpTunnel.OnRecv += (from, data) => UdpTunnel_OnRecv(context, from, sourceEndPoint, data);
-        return proxyContext.UdpTunnel;
-    }
     private TcpTunnel CreateTcpTunnel(TcpClientWrapper source, TcpClientWrapper target, AllowProtocols protocol)
     {
         if (source.EndPoint is null)
@@ -776,7 +765,7 @@ public class Proxy : IDisposable
         }
         else if (protocol.Equals(AllowProtocols.SOCKS))
         {
-            newTunnel = new SocksTunnel(source, target);
+             newTunnel = new SocksTunnel(source, target);
         }
         newTunnel!.OnError += Tunnel_OnError;
 
@@ -840,7 +829,7 @@ public class Proxy : IDisposable
     public class ProxyClientContext()
     {
         public TcpTunnel? TcpTunnel { get; set; } = null;
-        public UdpTunnel? UdpTunnel { get; set; } = null;
+        public UdpRedirector? UdpRedirector { get; set; } = null;
         public SocksProtocol? SocksProtocol { get; set; } = null;
         public IAuth? Auth { get; set; } = null;
         public string? Username { get; set; } = null;
