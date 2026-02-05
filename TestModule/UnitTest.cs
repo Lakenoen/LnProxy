@@ -162,6 +162,7 @@ namespace TestModule
         [Fact]
         public void BTreeTest()
         {
+            File.Delete("testFileIndex.bin");
             var node0 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
             FileIndex<BNode> file = new FileIndex<BNode>("testFileIndex.bin", node0.Size);
 
@@ -255,22 +256,39 @@ namespace TestModule
         [Fact]
         public void FileIndexTest()
         {
+            File.Delete("testFileIndex.bin");
             var node0 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
             FileIndex<BNode> file = new FileIndex<BNode>("testFileIndex.bin", node0.Size);
-            BNode node1 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
+
+            BNode node1 = new BNode(3, 0, Types.INTEGER, Types.STRING32);
             node1.Add(new Element((Integer)1, (String32)"1"));
             node1.Add(new Element((Integer)2, (String32)"2"));
             node1.Add(new Element((Integer)3, (String32)"3"));
-            file[0] = node1;
-            var nodeClone = file[0];
+            file.Add(node1);
 
-            BNode node2 = new BNode(3, -1, Types.INTEGER, Types.STRING32);
+            BNode node2 = new BNode(3, 1, Types.INTEGER, Types.STRING32);
             node2.Add(new Element((Integer)6, (String32)"6"));
             node2.Add(new Element((Integer)5, (String32)"5"));
             node2.Add(new Element((Integer)4, (String32)"4"));
-            file[1] = node2;
+            file.Add(node2);
 
-            nodeClone = file[1];
+            var clone = file[0];
+            Assert.Equal(node1, clone);
+
+            clone = file[1];
+            Assert.Equal(node2, clone);
+
+            clone[1].Value = (String32)"300";
+            file.Update(clone);
+
+            var clone2 = file[1];
+            Assert.Equal((String32)"300", clone2[1].Value);
+
+            int pos = file.IndexOf(clone2);
+            Assert.Equal(1, pos);
+
+            file.RemoveAt(0);
+            Assert.Equal(file[0], clone2);
 
             file.Dispose();
         }
