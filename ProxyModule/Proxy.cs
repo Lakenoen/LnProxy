@@ -294,7 +294,7 @@ public class Proxy : IDisposable
             {
                 AuthEnabled = _settings.AuthEnable,
                 ServerTcpEndPoint = _settings.ExternalTcpEndPoint,
-                BindServerEndPoint = _settings.SocksExternalBindEndPoint,
+                BindServerEndPoint = new IPEndPoint( _settings.SocksExternalBindAddress, 0),
                 ServerUdpAddress = _settings.SocksExternalUdpAddress,
                 CheckAddrType = b =>
                 {
@@ -360,45 +360,35 @@ public class Proxy : IDisposable
                             case ConnectType.CONNECT: {
                                     var target = new TcpClientWrapper(targetEndpoint);
                                     CreateTcpTunnel(client, target, AllowProtocols.SOCKS).StartAsync();
-
-                                    _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
-                                        , client.EndPoint!.ToString()
-                                        , proxyContext.Username
-                                        , target.EndPoint!.ToString());
-                                }
-                                ;break;
-                            case ConnectType.UDP:
-                                {
+                            };break;
+                            case ConnectType.UDP: {
                                     proxyContext.UdpRedirector = new UdpRedirector(client.EndPoint!, 0);
+                                    proxyContext.UdpRedirector.OnError += UdpRedirector_OnError;
                                     resp.BndPort = (ushort)proxyContext.UdpRedirector.Port;
                                     proxyContext.UdpRedirector.Invoke();
+                            };break;
+                        }
 
-                                    _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
+                        _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
                                         , client.EndPoint!.ToString()
                                         , proxyContext.Username
                                         , targetEndpoint.ToString());
-                                }
-                                ;break;
-                        }
                     }
                     else if (context.TargetType.Equals(SocksContext.Atyp.Domain))
                     {
                         var entry = await Dns.GetHostEntryAsync(context.TargetAddress);
                         switch (context.ConnectionType)
                         {
-                            case ConnectType.CONNECT:
-                                {
+                            case ConnectType.CONNECT: {
                                     var target = await CreateTargetConnection(entry, context.TargetPort);
                                     CreateTcpTunnel(client, target.client, AllowProtocols.SOCKS).StartAsync();
-                                }
-                                ;break;
-                            case ConnectType.UDP:
-                                {
+                            };break;
+                            case ConnectType.UDP: {
                                     proxyContext.UdpRedirector = new UdpRedirector(client.EndPoint!, 0);
+                                    proxyContext.UdpRedirector.OnError += UdpRedirector_OnError;
                                     resp.BndPort = (ushort)proxyContext.UdpRedirector.Port;
                                     proxyContext.UdpRedirector.Invoke();
-                                }
-                                ;break;
+                            };break;
                         }
 
                         _logger.Information("Connect client: {@Client} username: {@User} to {@Server} Protocol: Socks5"
@@ -504,6 +494,11 @@ public class Proxy : IDisposable
 
         if(protocol is not null && protocol.Context.Error != null)
             client.Disconnect();
+    }
+
+    private void UdpRedirector_OnError(Exception ex)
+    {
+        _logger.Error("UdpRedirector send exception: {@Exception}", ex);
     }
 
     private async Task<bool> HttpAuth(

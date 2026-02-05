@@ -6,7 +6,7 @@ DefaultHttpPort: 80
 MaxUserConnection: 3
 ExternalTcpAddress: 192.168.0.103 1080
 InternalTcpAddress: 0.0.0.0 1080
-SocksExternalBindAddress: 192.168.0.103 8889
+SocksExternalBindAddress: 192.168.0.103
 SocksExternalUdpAddress: 192.168.0.103
 AllowAddressTypes: IPv4 IPv6 Domain
 SocksAllowCommand: CONNECT BIND UDP

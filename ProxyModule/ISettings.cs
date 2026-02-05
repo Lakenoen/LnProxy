@@ -23,7 +23,7 @@ public interface ISettings
     public Logger? Logger { get; }
     public IPEndPoint InternalTcpEndPoint { get; }
     public IPEndPoint ExternalTcpEndPoint { get; }
-    public IPEndPoint SocksExternalBindEndPoint { get; }
+    public IPAddress SocksExternalBindAddress { get; }
     public IPAddress SocksExternalUdpAddress { get; }
     public bool SocksCheckAllowCommand(ConnectType type);
     public bool CheckAllowAddrType(string type);

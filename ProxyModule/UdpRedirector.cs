@@ -53,25 +53,25 @@ public class UdpRedirector : AStartableAsync, IDisposable
         {
             var res = await _udp.ReceiveFromAsync(_buffer, _remote, _cancel!.Token);
 
-            HandleDgram(_buffer.AsSpan().Slice(0, res.ReceivedBytes).ToArray(), (IPEndPoint)res.RemoteEndPoint);
+            HandleDgram(_buffer.AsMemory().Slice(0, res.ReceivedBytes).ToArray(), (IPEndPoint)res.RemoteEndPoint);
         }
         catch (OperationCanceledException) when (!_cancel!.Token.IsCancellationRequested)
         {
             return;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Error(ex);
+        }
     }
 
     private void HandleDgram(byte[] data, IPEndPoint from)
     {
-        if (from.Address.Equals(Client))
-        {
-            var packet = SocksContext.UdpPacket.Parse(data);
-            var where = new IPEndPoint(new IPAddress(packet.DstAddr!), packet.DstPort);
-            Send(where, packet.Data);
-            _history.Add(where, from);
-            return;
-        }
-        else if (_history.TryGetValue(from, out var client))
+        if (_history.TryGetValue(from, out var client))
         {
             var packet = new SocksContext.UdpPacket();
             packet.Rsv = 0;
@@ -86,6 +86,14 @@ public class UdpRedirector : AStartableAsync, IDisposable
             };
 
             Send(client, packet.ToByteArray());
+            return;
+        }
+        else if (from.Address.Equals(Client))
+        {
+            var packet = SocksContext.UdpPacket.Parse(data);
+            var where = new IPEndPoint(new IPAddress(packet.DstAddr!), packet.DstPort);
+            Send(where, packet.Data);
+            _history.Add(where, from);
             return;
         }
 
@@ -110,7 +118,9 @@ public class UdpRedirector : AStartableAsync, IDisposable
     protected override void Init() { }
     protected override void Start() { }
     protected override void End() { }
-    protected override void Error(Exception ex) { }
+    protected override void Error(Exception ex) {
+        OnError?.Invoke(ex);
+    }
 
     public event Action<Exception>? OnError;
 }

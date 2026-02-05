@@ -36,7 +36,7 @@ public class ProxySettings : ISettings, IDisposable
 
     private IPEndPoint? _externalTcpEndPoint = IPEndPoint.Parse("0.0.0.0:1080");
 
-    private IPEndPoint? _socksExternalBindEndPoint;
+    private IPAddress? _socksExternalBindAddress;
 
     private IPAddress? _socksExternalUdpAddress;
 
@@ -70,7 +70,7 @@ public class ProxySettings : ISettings, IDisposable
 
     public IPEndPoint ExternalTcpEndPoint => _externalTcpEndPoint!;
 
-    public IPEndPoint SocksExternalBindEndPoint => _socksExternalBindEndPoint!;
+    public IPAddress SocksExternalBindAddress => _socksExternalBindAddress!;
 
     public IPAddress SocksExternalUdpAddress => _socksExternalUdpAddress!;
 
@@ -155,7 +155,7 @@ public class ProxySettings : ISettings, IDisposable
                 case "EnableAuth": this._authEnable = bool.Parse(keyValue[1].Trim()); break;
                 case "ExternalTcpAddress": this._externalTcpEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
                 case "InternalTcpAddress": this._internalTcpEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
-                case "SocksExternalBindAddress": this._socksExternalBindEndPoint = GetEndPointFromString(keyValue[1].Trim()); break;
+                case "SocksExternalBindAddress": this._socksExternalBindAddress = IPAddress.Parse(keyValue[1].Trim()); break;
                 case "SocksExternalUdpAddress": this._socksExternalUdpAddress = IPAddress.Parse(keyValue[1].Trim()); break;
                 case "AllowAddressTypes": _allowAddrTypes = keyValue[1].Split(' ', ',').Select( (el, i)=> el.ToLower().Trim()).ToArray(); break;
                 case "SocksAllowCommand": _socksAllowCommand = keyValue[1].Split(' ', ',').Select((el, i) => el.ToLower().Trim()).ToArray(); break;
@@ -192,7 +192,7 @@ public class ProxySettings : ISettings, IDisposable
             throw new SettingsException("The path to the authentication file is missing");
         if (this.AuthEnable && !Path.GetExtension(this._pathToAuthFile).Equals(".index"))
             throw new SettingsException("The authentication file extension must be a .index");
-        if (this.SocksCheckAllowCommand(ConnectType.BIND) && this._socksExternalBindEndPoint is null)
+        if (this.SocksCheckAllowCommand(ConnectType.BIND) && this._socksExternalBindAddress is null)
             throw new SettingsException("Bind connection address missing");
         if (this.SocksCheckAllowCommand(ConnectType.UDP) && this._socksExternalUdpAddress is null)
             throw new SettingsException("Udp connection address missing");

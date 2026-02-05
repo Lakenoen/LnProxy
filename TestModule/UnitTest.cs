@@ -68,16 +68,18 @@ namespace TestModule
 
             //take request (server)
             IPEndPoint? remote = null;
-            var udpPacket = SocksContext.UdpPacket.Parse(serverUdp.Receive(ref remote));
-
-            var result = Encoding.UTF8.GetString(udpPacket.Data);
+            var result = Encoding.UTF8.GetString(serverUdp.Receive(ref remote) );
             Assert.Equal("Test Udp Message", result);
 
-            serverUdp.Send(Encoding.UTF8.GetBytes("Test Udp responce"), remote);
+            serverUdp.Send(Encoding.UTF8.GetBytes("Test Udp response"), remote);
 
             //take responce (client)
-            result = Encoding.UTF8.GetString(udp.Receive(ref remote));
-            Assert.Equal("Test Udp responce", result);
+            result = Encoding.UTF8.GetString(
+                    UdpPacket.Parse(
+                        udp.Receive(ref remote)
+                        ).Data!
+                );
+            Assert.Equal("Test Udp response", result);
 
             server.Dispose();
         }
