@@ -28,9 +28,9 @@ public class TcpClientWrapper : IDisposable
 
     public TcpClientWrapper(IPEndPoint ip)
     {
-        _client = new TcpClient();
+        _client = new TcpClient(ip.AddressFamily);
         _client.Connect(ip);
-        EndPoint = _client.Client.RemoteEndPoint as IPEndPoint;
+        EndPoint = ip;
         _stream = _client.GetStream();
     }
 

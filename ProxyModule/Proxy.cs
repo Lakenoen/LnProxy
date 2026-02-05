@@ -778,7 +778,7 @@ public class Proxy : IDisposable
     }
     private async Task<(TcpClientWrapper client, IPEndPoint addr)> CreateTargetConnection(IPHostEntry entry, int port)
     {
-        var connected = new ConcurrentQueue<(TcpClientWrapper client, IPEndPoint addr)>();
+        var connected = new WaitableDict<TcpClientWrapper, IPEndPoint>();
         using var cts = new CancellationTokenSource();
         await Parallel.ForEachAsync(entry.AddressList, async (IPAddress addr, CancellationToken token) =>
         {
@@ -792,8 +792,8 @@ public class Proxy : IDisposable
 
                 if (res.CheckConnection())
                 {
+                    connected.Add(res, enpoint);
                     cts.Cancel();
-                    connected.Enqueue((res, enpoint));
                 }
             }
             catch (OperationCanceledException)
@@ -806,9 +806,10 @@ public class Proxy : IDisposable
             }
         });
 
-        if(connected.TryPeek(out var res))
+        if(connected.Count > 0)
         {
-            return res;
+            var pair = connected.Last();
+            return (pair.Key, pair.Value);
         }
         throw new ApplicationException("Could not connect or find IP address");
     }

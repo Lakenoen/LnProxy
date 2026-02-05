@@ -10,18 +10,54 @@ namespace NetworkModule;
 
 public class WaitableDict<TKey, TValue>() : IDictionary<TKey, TValue> where TKey : notnull
 {
-    private Dictionary<TKey,TValue> _dict = new Dictionary<TKey, TValue>();
+    private Dictionary<TKey, TValue> _dict = new Dictionary<TKey, TValue>();
     private object _locker = new object();
 
-    public TValue this[TKey key] { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
+    public TValue this[TKey key]
+    {
+        get
+        {
+            lock (_locker) { return _dict[key]; }
+        }
+        set
+        {
+            lock (_locker) { _dict[key] = value; }
+        }
+    }
 
-    public ICollection<TKey> Keys => throw new NotImplementedException();
+    public ICollection<TKey> Keys
+    {
+        get
+        {
+            lock (_locker)
+            {
+                return _dict.Keys;
+            }
+        }
+    }
 
-    public ICollection<TValue> Values => throw new NotImplementedException();
+    public ICollection<TValue> Values
+    {
+        get
+        {
+            lock (_locker)
+            {
+                return _dict.Values;
+            }
+        }
+    }
 
-    public int Count => throw new NotImplementedException();
+    public int Count {
+        get
+        {
+            lock (_locker)
+            {
+                return _dict.Count;
+            }
+        }
+    }
 
-    public bool IsReadOnly => throw new NotImplementedException();
+    public bool IsReadOnly => false;
 
     public void Add(TKey key, TValue value)
     {
