@@ -28,6 +28,9 @@ public class UdpRedirector : AStartableAsync, IDisposable
         Client = client.Address;
 
         _udp = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        _udp.ReceiveBufferSize = 0xffff;
+        _udp.SendBufferSize = 0xffff;
+
         _udp.Bind( new IPEndPoint(IPAddress.Parse("0.0.0.0"), 0) );
         Port = ((IPEndPoint)_udp.LocalEndPoint!).Port;
     }

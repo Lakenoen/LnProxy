@@ -23,17 +23,27 @@ public class TcpClientWrapper : IDisposable
     {
         EndPoint = client.Client.RemoteEndPoint as IPEndPoint;
         _client = client;
+        InitClient();
+
         _stream = client.GetStream();
     }
 
     public TcpClientWrapper(IPEndPoint ip)
     {
         _client = new TcpClient(ip.AddressFamily);
+        InitClient();
+
         _client.Connect(ip);
         EndPoint = ip;
         _stream = _client.GetStream();
     }
 
+    private void InitClient()
+    {
+        _client.NoDelay = true;
+        _client.ReceiveBufferSize = 256 * 1024;
+        _client.SendBufferSize = 256 * 1024;
+    }
     public bool Reconnect()
     {
         try

@@ -21,6 +21,9 @@ public class TcpServer : AStartableAsync, IDisposable
     {
         this.EndPoint = endPoint;
         _listener = new TcpListener(this.EndPoint);
+        _listener.Server.NoDelay = true;
+        _listener.Server.ReceiveBufferSize = 256 * 1024;
+        _listener.Server.SendBufferSize = 256 * 1024;
     }
     private async void Wrapper_OnDisconnect(TcpClientWrapper tcpClientWrapper)
     {
