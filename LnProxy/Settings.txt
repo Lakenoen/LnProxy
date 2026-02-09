@@ -1,7 +1,7 @@
 ﻿ProxyCertPath: ../../../../../proxy.pfx
 ProxyCertPasswd: pass1
 EnableTls: false
-EnableAuth: false
+EnableAuth: true
 DefaultHttpPort: 80
 MaxUserConnection: 3
 ExternalTcpAddress: 192.168.0.103 1080

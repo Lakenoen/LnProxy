@@ -78,19 +78,27 @@ public partial class SocksContext
         }
         private byte[] PasswordAuth(byte[] data)
         {
-            PasswordAuthClientRequest req = PasswordAuthClientRequest.Parse(data);
-            string username = Encoding.UTF8.GetString(req.Username);
-            string password = Encoding.UTF8.GetString(req.Password);
-
             PasswordAuthServerResponce res = new() { Ver = 0x1, Status = 0x0 };
+            try
+            {
+                PasswordAuthClientRequest req = PasswordAuthClientRequest.Parse(data);
+                string username = Encoding.UTF8.GetString(req.Username);
+                string password = Encoding.UTF8.GetString(req.Password);
 
-            if (!Context.CheckAuth!(req))
+                if (!Context.CheckAuth!(req))
+                {
+                    Context.Error = new SocksAuthReject();
+                    res.Status = 0x1;
+                }
+
+                return res.ToByteArray();
+            }
+            catch
             {
                 Context.Error = new SocksAuthReject();
                 res.Status = 0x1;
+                return res.ToByteArray();
             }
-
-            return res.ToByteArray();
         }
         private byte[] Connection(byte[] data)
         {

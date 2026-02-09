@@ -81,6 +81,8 @@ public class Proxy : IDisposable
         {
             if (_users.TryGetValue(username, out HashSet<IPAddress>? users))
             {
+                if (users.Contains(client.EndPoint!.Address))
+                    return true;
                 if (users.Count >= _settings.MaxUserConnection)
                     return false;
                 users.Add(client.EndPoint!.Address);

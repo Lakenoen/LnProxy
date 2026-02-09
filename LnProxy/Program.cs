@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿//#define ENABLEAPP
+
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using ProxyModule;
@@ -54,7 +56,7 @@ public class Program
     }
     public static async Task Main(string[] args)
     {
-#if DEBUG
+#if (DEBUG || ENABLEAPP)
         await DebugEntryPoint();
 #else
         await ReleaseEntryPoint(args);
