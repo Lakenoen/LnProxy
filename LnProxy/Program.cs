@@ -13,16 +13,25 @@ using Microsoft.Extensions.DependencyInjection;
 
 public class Program
 {
-    private static async Task DebugEntryPoint()
+    private static async Task AppEntryPoint()
     {
         Directory.CreateDirectory("log");
         var fatalLogger = new LoggerConfiguration()
-            .WriteTo.File("log/FatalLog.txt", rollingInterval: RollingInterval.Day, encoding: Encoding.UTF8)
+            .WriteTo.File("log/AppLog.txt", rollingInterval: RollingInterval.Day, encoding: Encoding.UTF8)
             .CreateLogger();
         try
         {
+            var token = new CancellationTokenSource();
             var settings = new ProxySettings("Settings.txt");
             Proxy server = new Proxy(settings);
+
+            AppDomain.CurrentDomain.ProcessExit += (object? sender, EventArgs e) =>
+            {
+                token.Cancel();
+                server?.Dispose();
+                settings?.Dispose();
+            };
+
             settings.Changed += () =>
             {
                 settings.Dispose();
@@ -35,7 +44,7 @@ public class Program
             {
                 server = new Proxy(settings);
                 await server.StartAsync();
-            } while (true);
+            } while (!token.IsCancellationRequested);
         }
         catch (Exception ex)
         {
@@ -43,7 +52,7 @@ public class Program
         }
     }
 
-    private static async Task ReleaseEntryPoint(string[] args)
+    private static async Task DaemonEntryPoint(string[] args)
     {
         IHost? host = Host.CreateDefaultBuilder(args)
             .UseSystemd()
@@ -57,9 +66,9 @@ public class Program
     public static async Task Main(string[] args)
     {
 #if (DEBUG || ENABLEAPP)
-        await DebugEntryPoint();
+        await AppEntryPoint();
 #else
-        await ReleaseEntryPoint(args);
+        await DaemonEntryPoint(args);
 #endif
     }
 }
@@ -70,7 +79,7 @@ class Worker : BackgroundService
     {
         Directory.CreateDirectory("log");
         var fatalLogger = new LoggerConfiguration()
-            .WriteTo.File("log/FatalLog.txt", rollingInterval: RollingInterval.Day, encoding: Encoding.UTF8)
+            .WriteTo.File("log/AppLog.txt", rollingInterval: RollingInterval.Day, encoding: Encoding.UTF8)
             .CreateLogger();
         try
         {
