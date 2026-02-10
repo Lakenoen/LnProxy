@@ -1,4 +1,11 @@
 # LnProxy
+![Static Badge](https://img.shields.io/badge/C%23-green)
+![Static Badge](https://img.shields.io/badge/.Net-gray)
+![Static Badge](https://img.shields.io/badge/platform-linux-orange)
+![Static Badge](https://img.shields.io/badge/architecture-x64-white)
+![Static Badge](https://img.shields.io/badge/Aot-%2300BFFF)
+
+
 
 ## Description
 Proxy server for linux-x64 with support for HTTP/HTTPS SOCKS5 (connect, udp associate, bind), authorization and rules (ALLOW/DENY)
