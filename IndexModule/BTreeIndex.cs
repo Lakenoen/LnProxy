@@ -19,21 +19,32 @@ public class BTreeIndex : BNodeManager, IEnumerable
         }
         else
         {
-            foreach (BNode node in memory)
-            {
-                if (!node.isRoot)
-                    continue;
-                _root = node;
-                break;
-            }
-
-            if (_root is null)
-                throw new ApplicationException("The index file is probably damaged");
+            UpdateRoot(memory);
         }
+    }
+
+    private void FixRoot()
+    {
+        if (this._root is not null && !_mem[this._root.Address].isRoot)
+            UpdateRoot(_mem);
+    }
+    private void UpdateRoot(IList<BNode> memory)
+    {
+        foreach (BNode node in memory)
+        {
+            if (!node.isRoot)
+                continue;
+            _root = node;
+            break;
+        }
+
+        if (_root is null)
+            throw new ApplicationException("The index file is probably damaged");
     }
 
     public AData? Search(AData key)
     {
+        FixRoot();
         return Find(key, out _, out _)?.Value;
     }
     private Element? Find(AData key, out BNode node, out List<BNode> parents)
@@ -68,7 +79,6 @@ public class BTreeIndex : BNodeManager, IEnumerable
     }
     public bool Insert(AData key, AData value)
     {
-
         if (Search(key) is not null)
             return false;
 
@@ -132,6 +142,7 @@ public class BTreeIndex : BNodeManager, IEnumerable
 
     public bool Remove(AData key)
     {
+        FixRoot();
         Element? el = Find(key, out BNode node, out List<BNode> parents);
         if (el is null)
             return false;
@@ -159,8 +170,6 @@ public class BTreeIndex : BNodeManager, IEnumerable
     }
     private void RemoveFromLeaf(AData key, List<BNode> parents, BNode node)
     {
-        var parent = parents.Last();
-
         if(node == this._root!)
         {
             node.Remove(key);
@@ -173,6 +182,8 @@ public class BTreeIndex : BNodeManager, IEnumerable
         }
         else
         {
+            var parent = parents.Last();
+
             if (node.Count > node.Min)
                 return;
 
