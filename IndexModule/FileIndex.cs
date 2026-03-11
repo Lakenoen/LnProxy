@@ -34,7 +34,7 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
     public FileIndex(string path, int blockSize)
     {
         _blockSize = blockSize;
-        _stream = new FileStream(path,FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
+        _stream = new FileStream(path,FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 1);
         _writer = new BinaryWriter(_stream);
         _reader = new BinaryReader(_stream);
         if (_stream.Length == 0)

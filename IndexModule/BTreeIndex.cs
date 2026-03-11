@@ -25,6 +25,8 @@ public class BTreeIndex : BNodeManager, IEnumerable
 
     private void FixRoot()
     {
+        if(this._root is not null)
+            this._root = _mem[this._root!.Address];
         if (this._root is not null && !_mem[this._root.Address].isRoot)
             UpdateRoot(_mem);
     }
