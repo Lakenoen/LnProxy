@@ -17,7 +17,7 @@ Proxy server for linux-x64 with support for HTTP/HTTPS SOCKS5 (connect, udp asso
 - HTTP/HTTPS support
 
 ## Usage
-[Download](https://github.com/Lakenoen/LnProxy/releases/download/LnProxy-1.1.1/LnProxy-1.1.1.zip) the archive. Run LnProxy as an application or LnProxyService as a daemon.  
+[Download](https://github.com/Lakenoen/LnProxy/releases/download/LnProxy-1.1.2/LnProxy-1.1.2.zip) the archive. Run LnProxy as an application or LnProxyService as a daemon.  
 Configure and change Settings.txt and Rule.txt.  
 
 ## Ureg
