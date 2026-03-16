@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO.Enumeration;
 using System.IO.MemoryMappedFiles;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -22,7 +23,17 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
 
     private int startOffset = sizeof(int);
 
-    public int Count => _count;
+    public int Count
+    {
+        get
+        {
+            int tmp = (int)_stream.Position;
+            _stream.Seek(0, SeekOrigin.Begin);
+            _count = _reader.ReadInt32();
+            _stream.Seek(tmp, SeekOrigin.Begin);
+            return _count;
+        }
+    }
 
     public bool IsReadOnly => false;
 
@@ -40,7 +51,7 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
         if (_stream.Length == 0)
             _writer.Write(0);
         else
-            _count = _reader.ReadInt32();
+             _count = _reader.ReadInt32();
     }
     private void MoveTo(int index)
     {
@@ -60,7 +71,7 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
 
     public int IndexOf(T item)
     {
-        for(int i = 0; i < _count; i++)
+        for(int i = 0; i < Count; i++)
             if (this[i].Equals(item))
                 return i;
         return -1;
@@ -68,7 +79,7 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
 
     public void Insert(int index, T item)
     {
-        if(index > _count)
+        if(index > Count)
             throw new IndexOutOfRangeException();
 
         for (int i = index; i < _count; i++)
@@ -81,10 +92,10 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
 
     public void RemoveAt(int index)
     {
-        if (index >= _count)
+        if (index >= Count)
             throw new IndexOutOfRangeException();
 
-        for (int i = index; i < _count - 1; i++)
+        for (int i = index; i < Count - 1; i++)
             this[i] = this[i + 1];
 
         --_count;
@@ -104,7 +115,7 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
 
     public void Clear()
     {
-        for( int i = 0; i < _count; ++i )
+        for( int i = 0; i < Count; ++i )
             RemoveAt(i);
     }
 
@@ -116,7 +127,7 @@ public class FileIndex<T> : Updatable<T>, IDisposable, IList<T> where T : Serial
 
     public void CopyTo(T[] array, int arrayIndex)
     {
-        for (int i = arrayIndex; i < _count; ++i)
+        for (int i = arrayIndex; i < Count; ++i)
             array[i] = (T)this[i].Clone();
     }
 

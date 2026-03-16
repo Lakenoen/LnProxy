@@ -16,8 +16,8 @@ namespace Ureg
         public Methods(string path)
         {
             this._path = path;
-            this._file = new FileIndex<BNode>(path, new BNode(2, -1, Types.STRING32, Types.STRING32).Size);
-            this._index = new BTreeIndex(2, _file, Types.STRING32, Types.STRING32);
+            this._file = new FileIndex<BNode>(path, new BNode(25, -1, Types.STRING32, Types.STRING32).Size);
+            this._index = new BTreeIndex(25, _file, Types.STRING32, Types.STRING32);
         }
         public void Create(params string[] args)
         {

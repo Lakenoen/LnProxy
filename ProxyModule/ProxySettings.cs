@@ -95,20 +95,31 @@ public class ProxySettings : ISettings, IDisposable
         return _ruleManager.Check(info);
     }
 
+    private Cache cache { get; set; } = new Cache();
     public string? GetPassword(string userName)
     {
         if (_authIndex is null)
             return null;
         try
         {
-            return _authIndex.Search(userName);
+            var tryPass = cache[userName];
+            if (tryPass is not null)
+                return tryPass;
+
+            string pass = _authIndex.Search(userName);
+            cache[userName] = pass;
+            return pass;
+        }
+        catch (ApplicationException ex) when (ex.Message.Equals("There is no such login"))
+        {
+            Logger?.Information(ex.Message);
         }
         catch (Exception ex)
         {
-            if (Logger is not null)
-                Logger.Error(ex.Message);
-            return null;
+            Logger?.Error(ex.Message);
         }
+
+        return null;
     }
 
     private readonly string _settingsPath = string.Empty;
@@ -231,6 +242,63 @@ public class ProxySettings : ISettings, IDisposable
     public void Dispose()
     {
         this._authIndex?.Dispose();
+    }
+
+    private class Cache
+    {
+        private WaitableDict<string, ValueTtlPair> _memory = new WaitableDict<string, ValueTtlPair>();
+        System.Timers.Timer timer = new System.Timers.Timer(1000);
+        private const long DefaultTtl = 60;
+        private const int Max = 25;
+        public string? this[string key]
+        {
+            get {
+                if (!_memory.TryGetValue(key, out ValueTtlPair? value) || value is null)
+                    return null;
+
+                if(value.Ttl == 0)
+                {
+                    _memory.Remove(key);
+                    return null;
+                }
+                return value.Value;
+            }
+            set {
+                if(_memory.Count() < Max)
+                    _memory[key] = new ValueTtlPair { Value = value, Ttl = DefaultTtl };
+            }
+        }
+
+        public Cache()
+        {
+            timer.Elapsed += Timer_Elapsed;
+            timer.Start();
+        }
+
+        private void Timer_Elapsed(object? sender, System.Timers.ElapsedEventArgs e)
+        {
+            List<string> remove = new List<string>();
+            foreach(var el in _memory)
+            {
+                if (el.Value.Ttl == 0)
+                {
+                    remove.Add(el.Key);
+                    continue;
+                }
+                el.Value.Ttl -= 1;
+            }
+
+            foreach(var el in remove)
+            {
+                _memory.Remove(el);
+            }
+        }
+
+        private class ValueTtlPair()
+        {
+            public string? Value = string.Empty;
+            public long Ttl = 0;
+        }
     }
 
     public class SettingsException : ApplicationException
