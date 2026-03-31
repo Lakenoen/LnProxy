@@ -44,6 +44,7 @@ public class Program
             {
                 server = new Proxy(settings);
                 await server.StartAsync();
+                server?.Dispose();
             } while (!token.IsCancellationRequested);
         }
         catch (Exception ex)
@@ -102,6 +103,7 @@ class Worker : BackgroundService
             {
                 server = new Proxy(settings);
                 await server.StartAsync();
+                server.Dispose();
             } while (!stoppingToken.IsCancellationRequested);
 
             settings.Dispose();
