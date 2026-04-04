@@ -73,8 +73,15 @@ public abstract class AStartableAsync
     }
     public void Stop()
     {
-        if (_cancel != null && _cancel?.Token.IsCancellationRequested == false)
-            _cancel?.Cancel();
+        try
+        {
+            if (_cancel != null && _cancel?.Token.IsCancellationRequested == false)
+                _cancel?.Cancel();
+        }
+        catch
+        {
+
+        }
     }
     protected void ResetCancel()
     {
